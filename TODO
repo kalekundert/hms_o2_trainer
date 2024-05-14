@@ -1,0 +1,26 @@
+- Create a new GitHub repository:
+
+  https://github.com/new
+
+  Repository name: hms_o2_trainer
+
+  $ git remote add origin git@github.com:kalekundert/hms_o2_trainer.git
+  $ git push -u origin master
+
+- Create a "pending" trusted publisher:
+
+  https://pypi.org/manage/account/publishing/
+
+  PyPI project name: hms_o2_trainer
+  Owner:             kalekundert
+  Repository name:   hms_o2_trainer
+  Workflow name:     release.yml
+
+- Add Codecov token to GitHub:
+
+  https://app.codecov.io/gh/kalekundert/hms_o2_trainer/new
+  https://github.com/kalekundert/hms_o2_trainer/settings/secrets/actions/new
+
+- Install the pre-commit linting hook:
+
+  $ pre-commit install
