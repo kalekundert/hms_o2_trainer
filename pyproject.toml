@@ -14,12 +14,14 @@ classifiers = [
   'Programming Language :: Python :: 3',
 ]
 dependencies = [
+  'lightning',
+  'more_itertools',
+  'torch',
 ]
 
 [project.optional-dependencies]
 test = [
   'pytest',
-  'parametrize_from_file',
 ]
 doc = [
   'sphinx',
@@ -27,7 +29,8 @@ doc = [
   'autoclasstoc',
 ]
 [project.scripts]
-hms_o2_trainer = "hms_o2_trainer:main"
+hot_sbatch = "hms_o2_trainer.sbatch:main"
+
 [project.urls]
 'Documentation' = 'https://hms-o2-trainer.readthedocs.io/en/latest/'
 'Version Control' = 'https://github.com/kalekundert/hms_o2_trainer'
@@ -45,6 +48,10 @@ ignore = ["F405", "F403"]
 [tool.pytest.ini_options]
 addopts = "--doctest-modules --doctest-glob='*.rst'"
 doctest_optionflags = 'NORMALIZE_WHITESPACE'
+filterwarnings = [
+  "ignore:pkg_resources is deprecated as an API",
+  "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning",
+]
 
 [tool.coverage.run]
 branch = true
