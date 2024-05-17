@@ -11,12 +11,12 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from pathlib import Path
 
 def get_trainer(
-        hparams_name,
         *,
         dry_run=False,
         log_level=logging.INFO,
         float32_precision='high',
         out_dir=None,
+        version=None,
         **trainer_kwargs,
 ):
     logging.basicConfig(level=log_level)
@@ -56,7 +56,7 @@ def get_trainer(
             logger=TensorBoardLogger(
                 save_dir=out_dir.parent,
                 name=out_dir.name,
-                version=hparams_name,
+                version=version,
                 default_hp_metric=False,
             ),
             fast_dev_run=(dry_run and 10),
