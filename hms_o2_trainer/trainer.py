@@ -1,11 +1,9 @@
-import logging
 import os
 import inspect
 
 def get_trainer(
         *,
         dry_run=False,
-        log_level=logging.INFO,
         float32_precision='high',
         out_dir=None,
         version=None,
@@ -15,12 +13,13 @@ def get_trainer(
     import lightning as L
 
     from .utils import is_slurm, log
+    from .logging import init_logging
     from .requeue import RequeueBeforeTimeLimit
     from lightning.pytorch.callbacks import ModelCheckpoint
     from lightning.pytorch.loggers import TensorBoardLogger
     from pathlib import Path
 
-    logging.basicConfig(level=log_level)
+    init_logging()
 
     # Lightning recommends setting this to either 'medium' or 'high' (as
     # opposed to 'highest', which is the default) when training on GPUs with
@@ -44,7 +43,7 @@ def get_trainer(
         if not out_dir.is_absolute():
             out_dir = script_dir / out_dir
 
-    log.info("setting up trainer; float32_matmul_precision=%s output_dir=%s", float32_precision, out_dir)
+    log.info("configure trainer: float32_matmul_precision=%s output_dir=%s", float32_precision, out_dir)
 
     return L.Trainer(
             callbacks=[

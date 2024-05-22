@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
 
-source $AP_SLURM_SETUP_ENV
+[ -e "$HOT_SETUP_ENV" ] && source $HOT_SETUP_ENV
+
+(
+  set -x
+  echo $@
+  cat $1
+) 1>&2
+
 exec $@

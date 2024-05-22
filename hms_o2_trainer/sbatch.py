@@ -1,14 +1,19 @@
 """\
 Submit training jobs on a SLURM cluster.
 
-- Requeueing is automatically configured.
-- Parameters that don't typically change between runs (e.g. GPU/Partition/QOS) 
-  are read from environment variables, so they don't need to be specified every 
-  time.
-- The proper virtual environment can be loaded before the job starts.
-
 Usage:
     hot_sbatch [-d] [-h] [<sbatch args>]... -- <script> [<script args>]...
+
+Description:
+    This command is a relatively thin wrapper around the normal `sbatch` 
+    command, with the goal of providing some more useful defaults for the 
+    specific task of training machine learning models.  For example:
+
+    - Requeueing is automatically configured.
+    - Parameters that don't typically change between runs (e.g. 
+      GPU/Partition/QOS) are read from environment variables, so they don't 
+      need to be specified every time.
+    - The proper virtual environment can be loaded before the job starts.
 
 Arguments:
     <sbatch args>
@@ -56,6 +61,14 @@ Environment Variables:
         HOT_SBATCH_ERROR:
             The `--error` option for `sbatch`.  If not specified, the default 
             is `%x_%j.err`.
+
+        HOT_THIRD_PARTY_DEPS:
+            A colon-separated list of python package names.  If any of these 
+            packages are imported (directly or indirectly) by the training 
+            script, their version numbers will be logged.  Note that any 
+            packages that are present as git repositories on the current system 
+            will automatically be logged, regardless of this setting.  (Such 
+            packages are considered "first party".)
 """
 
 import re

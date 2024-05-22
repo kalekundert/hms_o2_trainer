@@ -6,4 +6,5 @@ __version__ = '0.0.0'
 
 from .hparams import *
 from .trainer import *
+from .logging import *
 from .utils import *
