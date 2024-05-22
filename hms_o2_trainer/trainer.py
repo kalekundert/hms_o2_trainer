@@ -1,14 +1,6 @@
-import torch
-import lightning as L
-import inspect
 import logging
 import os
-
-from .utils import is_slurm, log
-from .requeue import RequeueBeforeTimeLimit
-from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.loggers import TensorBoardLogger
-from pathlib import Path
+import inspect
 
 def get_trainer(
         *,
@@ -19,6 +11,15 @@ def get_trainer(
         version=None,
         **trainer_kwargs,
 ):
+    import torch
+    import lightning as L
+
+    from .utils import is_slurm, log
+    from .requeue import RequeueBeforeTimeLimit
+    from lightning.pytorch.callbacks import ModelCheckpoint
+    from lightning.pytorch.loggers import TensorBoardLogger
+    from pathlib import Path
+
     logging.basicConfig(level=log_level)
 
     # Lightning recommends setting this to either 'medium' or 'high' (as
