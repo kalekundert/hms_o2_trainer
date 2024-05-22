@@ -70,7 +70,7 @@ from itertools import product
 def main():
     args = parse_cli_args(__doc__, sys.argv[1:])
     argv = args['<sbatch args>']
-    script = Path(args['<script>'])
+    script = Path(args['<script>']).resolve()
     script_args = args['<script args>']
 
     argv += find_sbatch_comments(script)
