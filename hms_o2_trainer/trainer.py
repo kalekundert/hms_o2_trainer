@@ -62,3 +62,11 @@ def get_trainer(
             fast_dev_run=(dry_run and 10),
             **trainer_kwargs,
     )
+
+def show(model, data):
+    import torchlens as tl
+    from more_itertools import first
+
+    x, y = first(data.train_dataloader())
+    tl.show_model_graph(model.model, x)
+
