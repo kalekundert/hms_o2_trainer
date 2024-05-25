@@ -45,7 +45,13 @@ def get_trainer(
 
     log.info("configure trainer: float32_matmul_precision=%s output_dir=%s", float32_precision, out_dir)
 
-    return L.Trainer(
+    class HmsO2Trainer(L.Trainer):
+
+        def fit(self, *args, **kwargs):
+            kwargs = dict(ckpt_path='last') | kwargs
+            return super().fit(*args, **kwargs)
+
+    return HmsO2Trainer(
             callbacks=[
                 *hpc_callbacks,
                 ModelCheckpoint(
@@ -56,7 +62,7 @@ def get_trainer(
             logger=TensorBoardLogger(
                 save_dir=out_dir.parent,
                 name=out_dir.name,
-                version=version,
+                version=os.getenv('SLURM_JOB_ID', version),
                 default_hp_metric=False,
             ),
             fast_dev_run=(dry_run and 10),
