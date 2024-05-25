@@ -35,13 +35,12 @@ def get_trainer(
 
     if not out_dir:
         script_file = Path(inspect.currentframe().f_back.f_globals['__file__'])
-        script_dir = script_file.parent
 
-        out_dir = os.getenv('HOT_OUT_DIR', 'workspace').format(script_dir)
+        out_dir = os.getenv('HOT_OUT_DIR', 'workspace').format(script_file)
         out_dir = Path(out_dir).expanduser()
 
         if not out_dir.is_absolute():
-            out_dir = script_dir / out_dir
+            out_dir = script_file.parent / out_dir
 
     log.info("configure trainer: float32_matmul_precision=%s output_dir=%s", float32_precision, out_dir)
 
