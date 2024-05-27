@@ -23,6 +23,18 @@ dependencies = [
 test = [
   'pytest',
 ]
+show = [
+  'torchlens',
+]
+plot = [
+  'docopt',
+  'matplotlib',
+  'numpy',
+  'polars',
+  'scipy',
+  'sklearn',
+  'tbparse',
+]
 doc = [
   'sphinx',
   'sphinx_rtd_theme',
@@ -30,6 +42,7 @@ doc = [
 ]
 [project.scripts]
 hot_sbatch = "hms_o2_trainer.sbatch:main"
+hot_plot = "hms_o2_trainer.analysis:main"
 
 [project.urls]
 'Documentation' = 'https://hms-o2-trainer.readthedocs.io/en/latest/'
