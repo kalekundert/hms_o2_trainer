@@ -12,7 +12,7 @@ def get_trainer(
     import torch
     import lightning as L
 
-    from .utils import is_slurm, log
+    from .utils import is_slurm, log, get_job_id
     from .logging import init_logging
     from .requeue import RequeueBeforeTimeLimit
     from lightning.pytorch.callbacks import ModelCheckpoint
@@ -42,7 +42,10 @@ def get_trainer(
         if not out_dir.is_absolute():
             out_dir = script_file.parent / out_dir
 
-    log.info("configure trainer: float32_matmul_precision=%s output_dir=%s", float32_precision, out_dir)
+    if version is None and is_slurm():
+        version = get_job_id()
+
+    log.info("configure trainer: float32_matmul_precision=%s output_dir=%s version=%s", float32_precision, out_dir, version)
 
     class HmsO2Trainer(L.Trainer):
 
@@ -61,7 +64,7 @@ def get_trainer(
             logger=TensorBoardLogger(
                 save_dir=out_dir.parent,
                 name=out_dir.name,
-                version=os.getenv('SLURM_JOB_ID', version),
+                version=version,
                 default_hp_metric=False,
             ),
             fast_dev_run=(dry_run and 10),
