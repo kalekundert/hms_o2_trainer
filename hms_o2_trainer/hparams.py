@@ -40,7 +40,14 @@ def require_hparams(key, hparams):
                 print(f'{i:>{digits}} {known_key}')
             raise SystemExit
 
-    log.info('using hyperparameters:', x := hparams[key])
+    if key not in hparams:
+        try:
+            i = int(key)
+            key = list(hparams)[i]
+        except ValueError:
+            pass
+
+    log.info('using hyperparameters: %s', x := hparams[key])
     return key, x
 
 def interpolate(template, obj):
