@@ -13,7 +13,7 @@ def get_trainer(
     import lightning as L
 
     from .utils import is_slurm, log, get_job_id
-    from .logging import init_logging
+    from .logging import init_logging, log_dependencies
     from .requeue import RequeueBeforeTimeLimit
     from lightning.pytorch.callbacks import ModelCheckpoint
     from lightning.pytorch.loggers import TensorBoardLogger
@@ -50,6 +50,7 @@ def get_trainer(
     class HmsO2Trainer(L.Trainer):
 
         def fit(self, *args, **kwargs):
+            log_dependencies()
             kwargs = dict(ckpt_path='last') | kwargs
             return super().fit(*args, **kwargs)
 

@@ -9,7 +9,6 @@ from functools import cache
 @cache
 def init_logging():
     logging.basicConfig(level=logging.INFO)
-    log_dependencies()
 
 def log_dependencies():
     third_party_deps = os.environ.get('HOT_THIRD_PARTY_DEPS', '').split(':')
