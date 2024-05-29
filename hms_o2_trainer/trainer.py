@@ -72,10 +72,10 @@ def get_trainer(
             **trainer_kwargs,
     )
 
-def show(model, data):
+def show(model, data, **kwargs):
     import torchlens as tl
     from more_itertools import first
 
     x, y = first(data.train_dataloader())
-    tl.show_model_graph(model.model, x)
+    tl.show_model_graph(model.model, x, **kwargs)
 
