@@ -23,12 +23,10 @@ def is_sbatch():
     return m and m.group(1) == '1'
 
 def get_job_id():
-    array_job_id = os.getenv('SLURM_ARRAY_JOB_ID')
-    if array_job_id is not None:
-        array_task_id = os.environ['SLURM_ARRAY_TASK_ID']
-        return f'{array_job_id}_{array_task_id}'
-    else:
-        return os.environ['SLURM_JOB_ID']
+    # Note that for array jobs, `squeue` displays job ids in the format `<id of 
+    # first job in array>_<task id>`.  These aren't really job ids, though, so 
+    # we don't need to worry about recapitulating them here.
+    return os.environ['SLURM_JOB_ID']
 
 def require_env(name):
     if name not in os.environ:
