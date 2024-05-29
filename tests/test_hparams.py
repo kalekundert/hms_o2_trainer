@@ -1,4 +1,5 @@
-from hms_o2_trainer import make_hparams, label_hparams
+import nestedtext as nt
+from hms_o2_trainer import make_hparams, label_hparams, write_hparams
 from dataclasses import dataclass
 
 def test_make_hparams():
@@ -39,4 +40,27 @@ def test_label_hparams_str_dataclass():
 def test_label_hparams_callable():
     k = lambda i: f'i_{i + 1}'
     assert label_hparams(k, 1, 2) == {'i_2': 1, 'i_3': 2}
+
+def test_write_hparams_dict(tmp_path):
+    p = tmp_path / 'hparams' / 'job_id.nt'
+    write_hparams(p, {'x': 1, 'y': 2})
+    assert nt.load(p) == {'x': '1', 'y': '2'}
+
+def test_write_hparams_dataclass(tmp_path):
+
+    @dataclass
+    class HParams:
+        x: int
+        y: int
+
+    p = tmp_path / 'hparams' / 'job_id.nt'
+    write_hparams(p, HParams(1, 2))
+    assert nt.load(p) == {'x': '1', 'y': '2'}
+
+def test_write_hparams_factory(tmp_path):
+    p = tmp_path / 'hparams' / 'job_id.nt'
+    write_hparams(p, (1, 2), lambda x: dict(zip("xy", x)))
+    assert nt.load(p) == {'x': '1', 'y': '2'}
+
+
 

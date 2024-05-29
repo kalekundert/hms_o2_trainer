@@ -29,7 +29,7 @@ def label_hparams(key, *hparams):
     }
 
 def require_hparams(key, hparams):
-    if not key:
+    if key is None:
         try:
             i = int(os.environ['SLURM_ARRAY_TASK_ID'])
             key = list(hparams)[i]
@@ -49,6 +49,21 @@ def require_hparams(key, hparams):
 
     log.info('using hyperparameters: %s', x := hparams[key])
     return key, x
+
+def write_hparams(path, hparams, dict_factory=None):
+    import nestedtext as nt
+    from os import makedirs
+
+    if dict_factory:
+        hparams = dict_factory(hparams)
+    else:
+        try:
+            hparams = asdict(hparams)
+        except TypeError:
+            pass
+
+    makedirs(path.parent, exist_ok=True)
+    nt.dump(hparams, path)
 
 def interpolate(template, obj):
     try:
