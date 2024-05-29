@@ -1,5 +1,4 @@
 import os
-import re
 import logging
 
 log = logging.getLogger('hms_o2_trainer')
@@ -18,9 +17,9 @@ def is_sbatch():
 
     squeue = 'squeue', '--Format=batchflag', '--jobs', job_id
     p = run(squeue, capture_output=True)
-    m = re.fullmatch(r'BATCH_FLAG\s*\n(\d)\s*\n', p.stdout.decode())
-    
-    return m and m.group(1) == '1'
+    head, *rows = (x.strip() for x in p.stdout.decode().splitlines())
+
+    return head == 'BATCH_FLAG' and all(x == '1' for x in rows)
 
 def get_job_id():
     # Note that for array jobs, `squeue` displays job ids in the format `<id of 
