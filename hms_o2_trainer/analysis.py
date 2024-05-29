@@ -7,9 +7,9 @@ Usage:
 
 Arguments:
     <logs>
-        Paths to the log files containing the data to plot.  Path to 
-        directories can also be specified, in which case the directory will be 
-        searched recursively for log files.
+        Paths to the log files containing the data to plot.  Paths to 
+        directories can also be specified, in which case the directories will 
+        be searched recursively for log files.
 
 Options:
     -m --metrics <strs>
@@ -53,19 +53,15 @@ Options:
 import polars as pl
 import numpy as np
 import matplotlib.pyplot as plt
-import docopt
-import csv
 
-from tbparse import SummaryReader
-from sklearn.ensemble import IsolationForest
-from sklearn.neighbors import LocalOutlierFactor
-from scipy.signal import savgol_filter
 from pathlib import Path
 from itertools import product
 from more_itertools import one, unique_everseen as unique
 from operator import itemgetter
 
 def main():
+    import docopt
+
     args = docopt.docopt(__doc__)
     df = load_tensorboard_logs(
             log_paths=map(Path, args['<logs>']),
@@ -118,6 +114,8 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
             return pl.read_ipc(log_path, memory_map=False)
         if (p := log_path / 'cache.feather').exists():
             return pl.read_ipc(p, memory_map=False)
+
+    from tbparse import SummaryReader
 
     reader = SummaryReader(
             log_path,
@@ -267,6 +265,8 @@ def plot_training_metrics(
         ax_row[-1].axis('off')
 
 def infer_elapsed_time(t):
+    from sklearn.ensemble import IsolationForest
+
     # - The wall time data includes both the time it takes to process an 
     #   example and the time spent waiting between job requeues.  We only care 
     #   about the former.  So the purpose of this function is to detect the 
@@ -314,7 +314,9 @@ def pick_metrics(df, include_train=False):
     ]
 
 def load_hparams(path):
-    # Polars doesn't have to option to not infer data types, if the number of 
+    import csv
+
+    # Polars doesn't have the option to not infer data types, if the number of 
     # columns isn't known.  Since we want to ensure that the model names are 
     # strings even if they're composed entirely of digits, we need to parse the 
     # file ourselves.
@@ -328,13 +330,14 @@ def load_hparams(path):
     if 'name' not in head:
         raise ValueError(f"hyperparameter table must contain 'name' column: {path}")
 
-    return pl.DataFrame(body, head)
+    return pl.DataFrame(body, head, orient='row')
 
 def join_hparams(df, hparams):
     return df.join(
             hparams,
             left_on=pl.col('name').str.split('/').list.last(),
             right_on='name',
+            how='left',
     )
 
 def _pick_hparam_colors(df, hparams):
@@ -348,6 +351,9 @@ def _pick_hparam_colors(df, hparams):
     return hparam_colors
 
 def _apply_smoothing(x, y):
+    from sklearn.neighbors import LocalOutlierFactor
+    from scipy.signal import savgol_filter
+
     window_length = max(len(x) // 10, 15)
 
     lof = LocalOutlierFactor(2)
