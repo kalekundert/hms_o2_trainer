@@ -1,14 +1,16 @@
 import os, sys
 import logging
 
-from .utils import log
 from pathlib import Path
 from subprocess import run
-from functools import cache
 
-@cache
-def init_logging():
-    logging.basicConfig(level=logging.INFO)
+log = logging.getLogger('hms_o2_trainer')
+info = log.info
+
+# Configuring logging is generally supposed to be left to applications, and not 
+# done in libraries.  However, this library is meant to automate the process of 
+# creating light-weight applications, so I think it's justified here.
+logging.basicConfig(level=logging.INFO)
 
 def log_dependencies():
     third_party_deps = os.environ.get('HOT_THIRD_PARTY_DEPS', '').split(':')

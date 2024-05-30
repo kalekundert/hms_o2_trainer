@@ -1,7 +1,8 @@
 import os
 import time
 
-from .utils import get_job_id, log
+from .utils import get_job_id
+from .logging import log
 from lightning.pytorch.callbacks import Callback
 from more_itertools import pairwise
 from subprocess import run

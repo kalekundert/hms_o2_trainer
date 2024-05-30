@@ -1,7 +1,7 @@
 import torch
 import os
 
-from .utils import log
+from .logging import log
 from dataclasses import asdict
 from itertools import product
 from functools import partial

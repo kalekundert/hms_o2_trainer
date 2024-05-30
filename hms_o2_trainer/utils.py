@@ -1,8 +1,4 @@
 import os
-import logging
-
-log = logging.getLogger('hms_o2_trainer')
-info = log.info
 
 def is_slurm():
     return 'SLURM_JOB_ID' in os.environ

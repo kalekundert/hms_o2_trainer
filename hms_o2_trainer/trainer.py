@@ -12,14 +12,12 @@ def get_trainer(
     import torch
     import lightning as L
 
-    from .utils import is_slurm, log, get_job_id
-    from .logging import init_logging, log_dependencies
+    from .utils import is_slurm, get_job_id
+    from .logging import log, log_dependencies
     from .requeue import RequeueBeforeTimeLimit
     from lightning.pytorch.callbacks import ModelCheckpoint
     from lightning.pytorch.loggers import TensorBoardLogger
     from pathlib import Path
-
-    init_logging()
 
     # Lightning recommends setting this to either 'medium' or 'high' (as
     # opposed to 'highest', which is the default) when training on GPUs with
