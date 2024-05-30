@@ -1,11 +1,13 @@
 import torch
 import os
 
+from .utils import get_job_id
 from .logging import log
 from dataclasses import asdict
 from itertools import product
 from functools import partial
 from collections.abc import Mapping
+from pathlib import Path
 
 def make_hparams(factory, **kwargs):
     hparams = []
@@ -48,6 +50,14 @@ def require_hparams(key, hparams):
             pass
 
     log.info('using hyperparameters: %s', x := hparams[key])
+
+    try:
+        job_id = get_job_id()
+    except KeyError:
+        pass
+    else:
+        write_hparams(Path('hparams') / f'{job_id}.json', x)
+
     return key, x
 
 def write_hparams(path, hparams, encoder=None):
@@ -65,6 +75,8 @@ def write_hparams(path, hparams, encoder=None):
     makedirs(path.parent, exist_ok=True)
     with open(path, 'w') as f:
         json.dump(hparams, f)
+
+    log.info('record hyperparameters: %s', path)
 
 def interpolate(template, obj):
     try:
