@@ -31,8 +31,8 @@ plot = [
   'matplotlib',
   'numpy',
   'polars',
+  'scikit-learn',
   'scipy',
-  'sklearn',
   'tbparse',
 ]
 doc = [
