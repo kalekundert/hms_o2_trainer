@@ -50,12 +50,12 @@ def require_hparams(key, hparams):
     log.info('using hyperparameters: %s', x := hparams[key])
     return key, x
 
-def write_hparams(path, hparams, dict_factory=None):
-    import nestedtext as nt
+def write_hparams(path, hparams, encoder=None):
+    import json
     from os import makedirs
 
-    if dict_factory:
-        hparams = dict_factory(hparams)
+    if encoder:
+        hparams = encoder(hparams)
     else:
         try:
             hparams = asdict(hparams)
@@ -63,7 +63,8 @@ def write_hparams(path, hparams, dict_factory=None):
             pass
 
     makedirs(path.parent, exist_ok=True)
-    nt.dump(hparams, path)
+    with open(path, 'w') as f:
+        json.dump(hparams, f)
 
 def interpolate(template, obj):
     try:
