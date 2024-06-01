@@ -1,0 +1,72 @@
+test_has_argv:
+  -
+    argv:
+      [hot_sbatch, --foo, 1, --, bar.py]
+    prefixes:
+      [--foo]
+    expected: True
+  -
+    argv:
+      [hot_sbatch, --foo, 1, --, bar.py]
+    prefixes:
+      [--bar]
+    expected: False
+
+test_pop_argv:
+  -
+    id: baseline
+    argv:
+      [hot_sbatch, --foo, 1, --, bar.py]
+    prefixes:
+      [--foo]
+    expected:
+      i: 1
+      key: --foo
+      value: 1
+      argv:
+        [hot_sbatch, --, bar.py]
+  -
+    id: equal-syntax
+    argv:
+      [hot_sbatch, --foo=1, --, bar.py]
+    prefixes:
+      [--foo]
+    expected:
+      i: 1
+      key: --foo
+      value: 1
+      argv:
+        [hot_sbatch, --, bar.py]
+  -
+    id: multiple-prefixes
+    argv:
+      [hot_sbatch, -f, 1, --, bar.py]
+    prefixes:
+      [-f, --foo]
+    expected:
+      i: 1
+      key: -f
+      value: 1
+      argv:
+        [hot_sbatch, --, bar.py]
+  -
+    id: last-only
+    argv:
+      [hot_sbatch, --foo, 1, --foo, 2, --, bar.py]
+    prefixes:
+      [--foo]
+    expected:
+      i: 3
+      key: --foo
+      value: 2
+      argv:
+        [hot_sbatch, --foo, 1, --, bar.py]
+  -
+    id: err-not-found
+    argv:
+      [hot_sbatch, --, bar.py]
+    prefixes:
+      [--foo]
+    error: KeyError
+
+

@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 test = [
   'pytest',
+  'parametrize_from_file',
 ]
 show = [
   'torchlens',
