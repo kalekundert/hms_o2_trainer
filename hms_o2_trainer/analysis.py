@@ -3,7 +3,7 @@ Compare metrics between different training runs.
 
 Usage:
     hot_plot <logs>... [-m <metrics>] [-p <hparams>] [-k <regex>]
-        [-o <path>] [-fjtAT]
+        [-o <path>] [-fjtASTV]
 
 Arguments:
     <logs>
@@ -45,8 +45,15 @@ Options:
     -A --hide-raw
         Don't plot raw data points; only plot smoothed curves.
 
+    -S --hide-smooth
+        Don't plot smoothed curves; only plot raw data points.
+
     -T --hide-train
         Only plot the validation metrics, not the epoch-level training metrics.
+        Note that this option is ignored if `--metrics` is specified.
+
+    -V --hide-val
+        Only plot the epoch-level training metrics, not the validation metrics.
         Note that this option is ignored if `--metrics` is specified.
 """
 
@@ -71,7 +78,11 @@ def main():
     if args['--metrics']:
         metrics = args['--metrics'].split(',')
     else:
-        metrics = pick_metrics(df, not args['--hide-train'])
+        metrics = pick_metrics(
+                df,
+                include_train=not args['--hide-train'],
+                include_val=not args['--hide-val'],
+        )
 
     if Path(args['--hparams']).exists():
         hparam_df = load_hparams(args['--hparams'])
@@ -94,6 +105,7 @@ def main():
             df, metrics, hparams,
             x=x,
             show_raw=not args['--hide-raw'],
+            show_smooth=not args['--hide-smooth'],
             join_hparams=args['--join-hparams'],
     )
 
@@ -164,8 +176,15 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
     return df
 
 def plot_training_metrics(
-        df, metrics, hparams, *, x='step', show_raw=True, join_hparams=False,
+        df, metrics, hparams, *,
+        x='step',
+        show_raw=True,
+        show_smooth=True,
+        join_hparams=False,
 ):
+    if not show_raw and not show_smooth:
+        raise ValueError("nothing to show; both raw and smooth plots disabled")
+
     if join_hparams:
         df = df.with_columns(
                 hparams=pl.concat_list(hparams).list.join('; ')
@@ -204,15 +223,20 @@ def plot_training_metrics(
             did_you_mean = '\n'.join('- ' + k for k in sorted(df_by_metric))
             raise ValueError(f"can't find metric: {metric}\n\nDid you mean:\n{did_you_mean}")
 
+        # This loop plots the "primary" curves, i.e. the ones that are labeled 
+        # and solidly colored.  This could be either the raw data or the 
+        # smoothed data, depending on what the user asked for.
+
         for df_i in df_by_metric[metric].partition_by('name'):
             t = x_getters[x](df_i[x].to_numpy())
             y = df_i['value'].to_numpy()
 
-            t_smooth, y_smooth = _apply_smoothing(t, y)
-
             t_raw.append(t)
             y_raw.append(y)
             color_raw.append([])
+
+            if show_smooth:
+                t, y = _apply_smoothing(t, y)
 
             for j, hparam in enumerate(hparams):
                 ax = axes[j,i]
@@ -223,7 +247,7 @@ def plot_training_metrics(
                     color_raw[-1].append((j, color))
 
                     ax.plot(
-                            t_smooth, y_smooth,
+                            t, y,
                             label=f'{hparam_value}',
                             color=color,
                     )
@@ -233,8 +257,12 @@ def plot_training_metrics(
                 if j == len(hparams) - 1:
                     ax.set_xlabel(x_labels[x])
 
+        # This loops plots the "secondary" curves, i.e. the ones that are 
+        # unlabeled, mostly transparent, and have no effect on the y-limits.  
+        # These curves are only needed if both raw data and smoothed curves are 
+        # requested.
 
-        if show_raw:
+        if show_raw and show_smooth:
             ylim = axes[0,i].get_ylim()
 
             for t, y, colors in zip(t_raw, y_raw, color_raw):
@@ -293,10 +321,13 @@ def infer_elapsed_time(t):
 
     return _cumsum0(dt)
 
-def pick_metrics(df, include_train=False):
+def pick_metrics(df, include_train=False, include_val=True):
     known_metrics = set(df['metric'])
 
-    stages = ['val/{}']
+    stages = []
+
+    if include_val:
+        stages += ['val/{}']
 
     if include_train:
         stages += ['train/{}_epoch']
