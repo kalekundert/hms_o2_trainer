@@ -1,7 +1,6 @@
 import torch
 import os
 
-from .utils import get_job_id
 from .logging import log
 from dataclasses import asdict
 from itertools import product
@@ -30,6 +29,29 @@ def label_hparams(key, *hparams):
             for x in hparams
     }
 
+def require_hparams_from_cli(hparams):
+    import docopt
+    from __main__ import __file__, __doc__
+
+    usage = f"""\
+{__doc__.strip()}
+
+Usage:
+    ./{Path(__file__).name} [<hparams>]
+
+Arguments:
+    <hparams>
+        The hyperparameters to use for this training run, specified either as a 
+        name or an index number.  If the `$SLURM_ARRAY_TASK_ID` environment 
+        variable is set (as it would be for an array job), it will be the 
+        default value for this argument.  If no value is specified and no 
+        default is available, a list of possible hyperparameters will be 
+        printed to the terminal.
+"""
+
+    args = docopt.docopt(usage.strip())
+    return require_hparams(args['<hparams>'], hparams)
+
 def require_hparams(key, hparams):
     if key is None:
         try:
@@ -51,12 +73,12 @@ def require_hparams(key, hparams):
 
     log.info('using hyperparameters: %s', x := hparams[key])
 
-    try:
-        job_id = get_job_id()
-    except KeyError:
-        pass
-    else:
-        write_hparams(Path('hparams') / f'{job_id}.json', x)
+    # try:
+    #     job_id = get_job_id()
+    # except KeyError:
+    #     pass
+    # else:
+    #     write_hparams(Path('hparams') / f'{job_id}.json', x)
 
     return key, x
 
