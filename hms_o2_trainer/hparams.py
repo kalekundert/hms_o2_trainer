@@ -34,10 +34,9 @@ def require_hparams_from_cli(hparams):
     from __main__ import __file__, __doc__
 
     usage = f"""\
-{__doc__.strip()}
-
 Usage:
     ./{Path(__file__).name} [<hparams>]
+    ./{Path(__file__).name} (-h|--help)
 
 Arguments:
     <hparams>
@@ -48,6 +47,9 @@ Arguments:
         default is available, a list of possible hyperparameters will be 
         printed to the terminal.
 """
+
+    if __doc__:
+        usage = __doc__.strip() + '\n\n' + usage
 
     args = docopt.docopt(usage.strip())
     return require_hparams(args['<hparams>'], hparams)
