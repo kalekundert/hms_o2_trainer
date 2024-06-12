@@ -70,54 +70,58 @@ from more_itertools import one, unique_everseen as unique
 from operator import itemgetter
 
 def main():
-    import docopt
+    try:
+        import docopt
 
-    args = docopt.docopt(__doc__)
-    df = load_tensorboard_logs(
-            log_paths=map(Path, args['<logs>']),
-            refresh=args['--force-reload'],
-    )
-
-    if args['--metrics']:
-        metrics = args['--metrics'].split(',')
-    else:
-        metrics = pick_metrics(
-                df,
-                include_train=not args['--hide-train'],
-                include_val=not args['--hide-val'],
+        args = docopt.docopt(__doc__)
+        df = load_tensorboard_logs(
+                log_paths=map(Path, args['<logs>']),
+                refresh=args['--force-reload'],
         )
 
-    if Path(args['--hparams']).exists():
-        hparam_df = load_hparams(args['--hparams'])
-        df = join_hparams(df, hparam_df)
-        hparams = [x for x in hparam_df.columns if x != 'name']
-    else:
-        hparams = ['name']
+        if args['--metrics']:
+            metrics = args['--metrics'].split(',')
+        else:
+            metrics = pick_metrics(
+                    df,
+                    include_train=not args['--hide-train'],
+                    include_val=not args['--hide-val'],
+            )
 
-    if p := args['--select']:
-        df = df.filter(
-                pl.col('name').str.contains(p)
+        if Path(args['--hparams']).exists():
+            hparam_df = load_hparams(args['--hparams'])
+            df = join_hparams(df, hparam_df)
+            hparams = [x for x in hparam_df.columns if x != 'name']
+        else:
+            hparams = ['name']
+
+        if p := args['--select']:
+            df = df.filter(
+                    pl.col('name').str.contains(p)
+            )
+
+        if args['--steps']:
+            x = 'step'
+        elif args['--elapsed-time']:
+            x = 'elapsed_time'
+        else:
+            x = 'epoch'
+
+        plot_training_metrics(
+                df, metrics, hparams,
+                x=x,
+                show_raw=not args['--hide-raw'],
+                show_smooth=not args['--hide-smooth'],
+                concat_hparams=args['--concat-hparams'],
         )
 
-    if args['--steps']:
-        x = 'step'
-    elif args['--elapsed-time']:
-        x = 'elapsed_time'
-    else:
-        x = 'epoch'
+        if out_path := args['--output']:
+            plt.savefig(out_path)
+        else:
+            plt.show()
 
-    plot_training_metrics(
-            df, metrics, hparams,
-            x=x,
-            show_raw=not args['--hide-raw'],
-            show_smooth=not args['--hide-smooth'],
-            concat_hparams=args['--concat-hparams'],
-    )
-
-    if out_path := args['--output']:
-        plt.savefig(out_path)
-    else:
-        plt.show()
+    except KeyboardInterrupt:
+        pass
 
 def load_tensorboard_logs(log_paths, cache=True, refresh=False):
     return pl.concat([
