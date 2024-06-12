@@ -3,7 +3,7 @@ Compare metrics between different training runs.
 
 Usage:
     hot_plot <logs>... [-m <metrics>] [-p <hparams>] [-k <regex>]
-        [-o <path>] [-fjtASTV]
+        [-o <path>] [-fcst] [-ASTV]
 
 Arguments:
     <logs>
@@ -34,13 +34,16 @@ Options:
     -f --force-reload
         Ignore any caches and parse the training data from scratch.
 
-    -j --join-hparams
+    -c --concat-hparams
         Instead of making a separate row of plots for each hyperparameter, plot 
         everything in a single row.  For smaller experiments, this might be 
         easier to understand than the default.
 
+    -s --steps
+        Plot the number of steps on the x-axis, instead of the epoch.
+
     -t --elapsed-time
-        Plot elapsed time on the x-axis, instead of step number.
+        Plot elapsed time on the x-axis, instead of the epoch.
 
     -A --hide-raw
         Don't plot raw data points; only plot smoothed curves.
@@ -96,17 +99,19 @@ def main():
                 pl.col('name').str.contains(p)
         )
 
-    if args['--elapsed-time']:
+    if args['--steps']:
+        x = 'step'
+    elif args['--elapsed-time']:
         x = 'elapsed_time'
     else:
-        x = 'step'
+        x = 'epoch'
 
     plot_training_metrics(
             df, metrics, hparams,
             x=x,
             show_raw=not args['--hide-raw'],
             show_smooth=not args['--hide-smooth'],
-            join_hparams=args['--join-hparams'],
+            concat_hparams=args['--concat-hparams'],
     )
 
     if out_path := args['--output']:
@@ -134,36 +139,66 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
             extra_columns={'dir_name', 'wall_time'},
     )
 
-    df = pl.from_pandas(reader.scalars)\
-           .lazy()\
-           .rename({
-               'dir_name': 'name',
-               'tag': 'metric',
-           })\
-           .filter(
-               pl.col('step') > 0,
-               pl.col('metric').str.ends_with('_step') == False,
-           )\
-           .filter(
-               pl.col('step').len().over('name', 'metric') > 1,
-           )\
-           .with_columns(
-               pl.concat_str(
-                   pl.lit(str(log_path)),
-                   pl.col('name'),
-                   separator='/',
-               ).alias('name'),
-           )\
-           .with_columns(
-               pl.col('wall_time')
-                 .map_elements(
-                     lambda t: pl.Series(infer_elapsed_time(t.to_numpy())),
-                     return_dtype=pl.List(float),
-                 )
-                 .over(['name', 'metric'])
-                 .alias('elapsed_time')
-           )\
-           .collect()
+    df = (
+            pl.from_pandas(reader.scalars)
+            .rename({
+                'dir_name': 'name',
+                'tag': 'metric',
+            })
+    )
+    epochs = (
+            df
+            .lazy()
+            .filter(metric='epoch')
+            .select(
+                'name', 'step',
+                epoch=pl.col('value').cast(int),
+            )
+            .group_by('name', 'step')
+            .min()
+    )
+    df = (
+            df
+            .lazy()
+            .filter(
+                pl.col('step') > 0,
+                pl.col('metric') != 'epoch',
+                pl.col('metric').str.ends_with('_step') == False,
+            )
+            .filter(
+                pl.col('step').len().over('name', 'metric') > 1,
+            )
+            .join(
+                epochs,
+                on=['name', 'step'],
+                how='left',
+            )
+            .with_columns(
+                pl.concat_str(
+                    pl.lit(str(log_path)),
+                    pl.col('name'),
+                    separator='/',
+                ).alias('name'),
+            )
+            .with_columns(
+                pl.col('wall_time')
+                  .map_elements(
+                      lambda t: pl.Series(infer_elapsed_time(t.to_numpy())),
+                      return_dtype=pl.List(float),
+                  )
+                  .over(['name', 'metric'])
+                  .alias('elapsed_time')
+            )
+            .select(
+                'name',
+                'metric',
+                'epoch',
+                'step',
+                'elapsed_time',
+                'value',
+            )
+            .collect()
+    )
 
     if cache:
         if log_path.is_dir():
@@ -180,12 +215,12 @@ def plot_training_metrics(
         x='step',
         show_raw=True,
         show_smooth=True,
-        join_hparams=False,
+        concat_hparams=False,
 ):
     if not show_raw and not show_smooth:
         raise ValueError("nothing to show; both raw and smooth plots disabled")
 
-    if join_hparams:
+    if concat_hparams:
         df = df.with_columns(
                 hparams=pl.concat_list(hparams).list.join('; ')
         )
@@ -204,13 +239,16 @@ def plot_training_metrics(
     )
 
     x_labels = {
-            'elapsed_time': 'elapsed time (h)',
+            'epoch': 'epochs',
             'step': 'steps (×1000)',
+            'elapsed_time': 'elapsed time (h)',
     }
     x_getters = {
-            'elapsed_time': lambda x: x / 3600,
+            'epoch': lambda x: x + 1,
             'step': lambda x: (x + 1) / 1000,
+            'elapsed_time': lambda x: x / 3600,
     }
+
     df_by_metric = df.partition_by('metric', as_dict=True)
     hparam_colors = _pick_hparam_colors(df, hparams)
 
@@ -269,6 +307,8 @@ def plot_training_metrics(
                 for j, color in colors:
                     axes[j,i].plot(t, y, color=color, alpha=0.2)
                     axes[j,i].set_ylim(*ylim)
+
+    axes[0,0].set_xlim(df[x].min(), df[x].max())
 
     for i, ax_row in enumerate(axes):
         labels = ax_row[0].get_legend_handles_labels()
@@ -364,11 +404,16 @@ def load_hparams(path):
     return pl.DataFrame(body, head, orient='row')
 
 def join_hparams(df, hparams):
-    return df.join(
-            hparams,
-            left_on=pl.col('name').str.split('/').list.last(),
-            right_on='name',
-            how='left',
+    return (
+            df
+            .join(
+                hparams.with_row_index(),
+                left_on=pl.col('name').str.split('/').list.last(),
+                right_on='name',
+                how='left',
+            )
+            .sort('index')
+            .drop('index')
     )
 
 def _pick_hparam_colors(df, hparams):
