@@ -189,6 +189,7 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
                   .over(['name', 'metric'])
                   .alias('elapsed_time')
             )
+            .sort('name', 'metric', 'step')
             .select(
                 'name',
                 'metric',
@@ -308,7 +309,8 @@ def plot_training_metrics(
                     axes[j,i].plot(t, y, color=color, alpha=0.2)
                     axes[j,i].set_ylim(*ylim)
 
-    axes[0,0].set_xlim(df[x].min(), df[x].max())
+    t = x_getters[x](df[x].to_numpy())
+    axes[0,0].set_xlim(t.min(), t.max())
 
     for i, ax_row in enumerate(axes):
         labels = ax_row[0].get_legend_handles_labels()
