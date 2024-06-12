@@ -129,7 +129,7 @@ def main():
         if has_argv(argv, '--gpu-arch'):
             if has_argv(argv, '--exclude'):
                 raise ConfigError("cannot specify `--gpu-arch` and `--exclude` together")
-            _, _, arch = pop_argv(argv, '--gpu-arch')
+            _, _, arch = pop_argv(sbatch, '--gpu-arch')
             sbatch += ['--exclude', ','.join(exclude_nodes_by_gpu_arch(arch))]
 
         require_env('HOT_SETUP_ENV')
