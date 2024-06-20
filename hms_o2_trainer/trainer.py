@@ -70,10 +70,19 @@ def get_trainer(
             **trainer_kwargs,
     )
 
-def show(model, data, **kwargs):
+def show_layers(model, data, **kwargs):
+    import torchinfo
+    from more_itertools import first
+
+    data.setup('fit')
+    x, y = first(data.train_dataloader())
+    torchinfo.summary(model.model, input_data=[x], **kwargs)
+
+def show_dag(model, data, **kwargs):
     import torchlens as tl
     from more_itertools import first
 
+    data.setup('fit')
     x, y = first(data.train_dataloader())
     tl.show_model_graph(model.model, x, **kwargs)
 
