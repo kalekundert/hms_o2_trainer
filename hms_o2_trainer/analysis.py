@@ -24,8 +24,15 @@ Options:
         must contain one value called "name", which gives the name of the 
         directory containing the logs for the run in question.
 
-    -k --select <regex>
-        Only show models whose names match the given regular expression.
+    -k --select <sql>
+        Only show models that are selected by the given SQL expression.  The 
+        expression will be used in the following SQL statement:
+            
+            SELECT * from models WHERE ...
+
+        The `...` is what will be replaced by the given expression.  The 
+        `models` tables contains one row for each model and, if `--hparams` is 
+        given, one column for each hyperparameter.
 
     -o --output <path>
         Write the resulting plot to the given path.  If not specified, the plot 
@@ -95,10 +102,8 @@ def main():
         else:
             hparams = ['name']
 
-        if p := args['--select']:
-            df = df.filter(
-                    pl.col('name').str.contains(p)
-            )
+        if k := args['--select']:
+            df = df.sql(f'SELECT * from self WHERE {k}')
 
         if args['--steps']:
             x = 'step'
