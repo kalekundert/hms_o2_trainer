@@ -7,6 +7,7 @@ def get_trainer(
         float32_precision='high',
         out_dir=None,
         version=None,
+        ckpt_metric='val/loss',
         **trainer_kwargs,
 ):
     import torch
@@ -26,10 +27,19 @@ def get_trainer(
     # 'high' setting as a compromise to be optimized later.
     torch.set_float32_matmul_precision(float32_precision)
 
+    callbacks = [
+            *trainer_kwargs.pop('callbacks', []),
+
+            # This callback is required for requeueing to work.
+            ModelCheckpoint(
+                monitor=ckpt_metric,
+                save_last='link',
+                every_n_epochs=1,
+            ),
+    ]
+
     if is_slurm():
-        hpc_callbacks = [RequeueBeforeTimeLimit()]
-    else:
-        hpc_callbacks = []
+        callbacks += [RequeueBeforeTimeLimit()]
 
     if not out_dir:
         script_file = Path(inspect.currentframe().f_back.f_globals['__file__'])
@@ -53,13 +63,7 @@ def get_trainer(
             return super().fit(*args, **kwargs)
 
     return HmsO2Trainer(
-            callbacks=[
-                *hpc_callbacks,
-                ModelCheckpoint(
-                    save_last=True,
-                    every_n_epochs=1,
-                ),
-            ],
+            callbacks=callbacks,
             logger=TensorBoardLogger(
                 save_dir=out_dir.parent,
                 name=out_dir.name,
