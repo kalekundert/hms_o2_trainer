@@ -25,6 +25,7 @@ test = [
   'parametrize_from_file',
 ]
 show = [
+  'torchinfo',
   'torchlens',
 ]
 plot = [
@@ -41,6 +42,7 @@ doc = [
   'sphinx_rtd_theme',
   'autoclasstoc',
 ]
+
 [project.scripts]
 hot_sbatch = "hms_o2_trainer.sbatch:main"
 hot_plot = "hms_o2_trainer.analysis:main"
