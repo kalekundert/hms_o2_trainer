@@ -3,7 +3,7 @@ Compare metrics between different training runs.
 
 Usage:
     hot_plot <logs>... [-m <metrics>] [-p <hparams>] [-k <regex>]
-        [-o <path>] [-fcst] [-ASTV]
+        [-o <path>] [-fcst] [-ASTVL]
 
 Arguments:
     <logs>
@@ -13,9 +13,9 @@ Arguments:
 
 Options:
     -m --metrics <strs>
-        A comma separated list of the metrics to plot.  By default, the 
-        following metrics will be displayed if present: loss, MAE (for 
-        regression tasks), accuracy (for classification tasks).
+        A comma separated list of the metrics to plot.  Glob-style patterns are 
+        supported.  By default, the following metrics will be displayed if 
+        present: loss, RMSE or MAE, pearson R, accuracy
 
     -p --hparams <csv>      [default: hparams.csv]
         A path to a CSV file describing the hyperparameters for each training 
@@ -65,11 +65,16 @@ Options:
     -V --hide-val
         Only plot the epoch-level training metrics, not the validation metrics.
         Note that this option is ignored if `--metrics` is specified.
+
+    -L --hide-loss
+        Don't plot the loss function.  This option is ignored if `--metrics` is 
+        specified.
 """
 
 import polars as pl
 import numpy as np
 import matplotlib.pyplot as plt
+import fnmatch
 
 from pathlib import Path
 from itertools import product
@@ -87,12 +92,13 @@ def main():
         )
 
         if args['--metrics']:
-            metrics = args['--metrics'].split(',')
+            metrics = pick_metrics(df, args['--metrics'])
         else:
-            metrics = pick_metrics(
+            metrics = pick_default_metrics(
                     df,
                     include_train=not args['--hide-train'],
                     include_val=not args['--hide-val'],
+                    include_loss=not args['--hide-loss'],
             )
 
         if Path(args['--hparams']).exists():
@@ -372,7 +378,22 @@ def infer_elapsed_time(t):
 
     return _cumsum0(dt)
 
-def pick_metrics(df, include_train=False, include_val=True):
+def pick_metrics(df, spec):
+    known_metrics = sorted(set(df['metric']))
+
+    metrics = []
+    for pattern in spec.split(','):
+        metrics += fnmatch.filter(known_metrics, pattern)
+
+    return list(unique(metrics))
+
+def pick_default_metrics(
+        df,
+        *,
+        include_train=False,
+        include_val=True,
+        include_loss=True,
+):
     known_metrics = set(df['metric'])
 
     stages = []
@@ -383,10 +404,18 @@ def pick_metrics(df, include_train=False, include_val=True):
     if include_train:
         stages += ['train/{}_epoch']
 
-    metrics = ['loss']
+    metrics = []
 
-    if 'val/mae' in known_metrics:
+    if include_loss:
+        metrics.append('loss')
+
+    if 'val/rmse' in known_metrics:
+        metrics.append('rmse')
+    elif 'val/mae' in known_metrics:
         metrics.append('mae')
+
+    if 'val/pearson_r' in known_metrics:
+        metrics.append('pearson_r')
     if 'val/accuracy' in known_metrics:
         metrics.append('accuracy')
 
