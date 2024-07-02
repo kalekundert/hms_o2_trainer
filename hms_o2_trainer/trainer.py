@@ -33,8 +33,9 @@ def get_trainer(
             # This callback is required for requeueing to work.
             ModelCheckpoint(
                 monitor=ckpt_metric,
-                save_last='link',
+                save_last=True,
                 every_n_epochs=1,
+                verbose=True,
             ),
     ]
 
