@@ -3,7 +3,7 @@ Compare metrics between different training runs.
 
 Usage:
     hot_plot <logs>... [-m <metrics>] [-p <hparams>] [-k <regex>]
-        [-o <path>] [-fcst] [-ASTVL]
+        [-o <path>] [-f1st] [-ASTVL]
 
 Arguments:
     <logs>
@@ -41,7 +41,7 @@ Options:
     -f --force-reload
         Ignore any caches and parse the training data from scratch.
 
-    -c --concat-hparams
+    -1 --concat-hparams
         Instead of making a separate row of plots for each hyperparameter, plot 
         everything in a single row.  For smaller experiments, this might be 
         easier to understand than the default.
@@ -237,10 +237,11 @@ def plot_training_metrics(
         raise ValueError("nothing to show; both raw and smooth plots disabled")
 
     if concat_hparams:
+        col = '; '.join(hparams)
         df = df.with_columns(
-                hparams=pl.concat_list(hparams).list.join('; ')
+                pl.concat_list(hparams).list.join('; ').alias(col)
         )
-        hparams = ['hparams']
+        hparams = [col]
 
     ncols = len(metrics) + 1
     nrows = len(hparams)
@@ -265,7 +266,10 @@ def plot_training_metrics(
             'elapsed_time': lambda x: x / 3600,
     }
 
-    df_by_metric = df.partition_by('metric', as_dict=True)
+    df_by_metric = {
+            one(k): v
+            for k, v in df.partition_by('metric', as_dict=True).items()
+    }
     hparam_colors = _pick_hparam_colors(df, hparams)
 
     for i, metric in enumerate(metrics):
@@ -422,6 +426,7 @@ def pick_default_metrics(
     return [
             stage.format(metric)
             for stage, metric in product(stages, metrics)
+            if stage.format(metric) in known_metrics
     ]
 
 def load_hparams(path):
