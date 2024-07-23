@@ -37,6 +37,16 @@ plot = [
   'scipy',
   'tbparse',
 ]
+memprof = [
+  'docopt',
+  'lightning',
+  'matplotlib',
+  'more_itertools',
+  'networkx',
+  'numpy',
+  'pandas',
+  'psutil',
+]
 doc = [
   'sphinx',
   'sphinx_rtd_theme',
