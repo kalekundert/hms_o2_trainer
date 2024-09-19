@@ -84,10 +84,24 @@ def show_layers(model, data, **kwargs):
     torchinfo.summary(model.model, input_data=[x], **kwargs)
 
 def show_dag(model, data, **kwargs):
+    """
+    Produce a graph of every operation that occurs during a forward pass of the 
+    model.
+
+    This graph is produced by the `torchlens` library.  This can be a pretty 
+    expensive operation, so I recommend using the smallest batch size possible.
+
+    This function automatically puts the model in eval mode.  This is important 
+    for ESCNN models, because in training mode the convolutional layers do a 
+    bunch of extra calculations that take a long time and clutter the final 
+    graph.
+    """
     import torchlens as tl
     from more_itertools import first
 
+    model.eval()
     data.setup('fit')
     x, y = first(data.train_dataloader())
+
     tl.show_model_graph(model.model, x, **kwargs)
 
