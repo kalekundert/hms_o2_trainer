@@ -126,11 +126,17 @@ def main():
         if not has_argv(argv, '-e', '--error'):
             sbatch += ['--error', os.environ.get('HOT_SBATCH_ERROR', '%x_%j.err')]
 
+        exclude = []
+
         if has_argv(argv, '--gpu-arch'):
             if has_argv(argv, '--exclude'):
                 raise ConfigError("cannot specify `--gpu-arch` and `--exclude` together")
             _, _, arch = pop_argv(sbatch, '--gpu-arch')
-            sbatch += ['--exclude', ','.join(exclude_nodes_by_gpu_arch(arch))]
+            exclude += exclude_nodes_by_gpu_arch(arch)
+
+        if not has_argv(argv, '--exclude'):
+            exclude += get_blacklisted_nodes()
+            sbatch += ['--exclude', ','.join(exclude)]
 
         require_env('HOT_SETUP_ENV')
         sbatch += [
@@ -228,6 +234,22 @@ def find_sbatch_comments(path):
             args.append(m.group(1))
 
     return args
+
+def get_blacklisted_nodes():
+    return [
+            # 2024/09/19: These nodes give the following error:
+            #   
+            #   RuntimeError: CUDA unknown error - this may be due to an 
+            #   incorrectly set up environment, e.g. changing env variable 
+            #   CUDA_VISIBLE_DEVICES after program start. Setting the available 
+            #   devices to be zero.
+            #
+            # An internet search indicates that restarting the nvidia driver 
+            # can often fix this, but I don't have permission to do that on the 
+            # cluster.
+            'compute-gc-17-244',
+            'compute-gc-17-249',
+    ]
 
 def exclude_nodes_by_gpu_arch(arch):
     arch_ranks = [
