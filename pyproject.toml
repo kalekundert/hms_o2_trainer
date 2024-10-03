@@ -33,6 +33,7 @@ plot = [
   'matplotlib',
   'numpy',
   'polars',
+  'pyperclip',
   'scikit-learn',
   'scipy',
   'tbparse',

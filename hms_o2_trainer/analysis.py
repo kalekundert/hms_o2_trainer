@@ -80,6 +80,8 @@ from pathlib import Path
 from itertools import product
 from more_itertools import one, unique_everseen as unique
 from operator import itemgetter
+from functools import partial
+from io import StringIO
 
 def main():
     try:
@@ -102,10 +104,11 @@ def main():
             )
 
         if Path(args['--hparams']).exists():
-            hparam_df = load_hparams(args['--hparams'])
-            df = join_hparams(df, hparam_df)
-            hparams = [x for x in hparam_df.columns if x != 'name']
+            hparams_df = load_hparams(args['--hparams'])
+            df = join_hparams(df, hparams_df)
+            hparams = [x for x in hparams_df.columns if x != 'name']
         else:
+            hparams_df = df['name'].unique()
             hparams = ['name']
 
         if k := args['--select']:
@@ -129,7 +132,7 @@ def main():
         if out_path := args['--output']:
             plt.savefig(out_path)
         else:
-            plt.show()
+            launch_pyplot_gui(hparams_df)
 
     except KeyboardInterrupt:
         pass
@@ -157,7 +160,7 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
     df = (
             pl.from_pandas(reader.scalars)
             .rename({
-                'dir_name': 'name',
+                'dir_name': 'root',
                 'tag': 'metric',
             })
     )
@@ -166,10 +169,10 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
             .lazy()
             .filter(metric='epoch')
             .select(
-                'name', 'step',
+                'root', 'step',
                 epoch=pl.col('value').cast(int),
             )
-            .group_by('name', 'step')
+            .group_by('root', 'step')
             .min()
     )
     df = (
@@ -181,19 +184,22 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
                 pl.col('metric').str.ends_with('_step') == False,
             )
             .filter(
-                pl.col('step').len().over('name', 'metric') > 1,
+                pl.col('step').len().over('root', 'metric') > 1,
             )
             .join(
                 epochs,
-                on=['name', 'step'],
+                on=['root', 'step'],
                 how='left',
             )
             .with_columns(
-                pl.concat_str(
+                root=pl.concat_str(
                     pl.lit(str(log_path)),
-                    pl.col('name'),
+                    pl.col('root'),
                     separator='/',
-                ).alias('name'),
+                ),
+            )
+            .with_columns(
+                name=pl.col('root').str.split('/').list.last(),
             )
             .with_columns(
                 pl.col('wall_time')
@@ -201,11 +207,12 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
                       lambda t: pl.Series(infer_elapsed_time(t.to_numpy())),
                       return_dtype=pl.List(float),
                   )
-                  .over(['name', 'metric'])
+                  .over(['root', 'metric'])
                   .alias('elapsed_time')
             )
             .sort('name', 'metric', 'step')
             .select(
+                'root',
                 'name',
                 'metric',
                 'epoch',
@@ -233,6 +240,8 @@ def plot_training_metrics(
         show_smooth=True,
         concat_hparams=False,
 ):
+    from sklearn.neighbors import KDTree
+
     if not show_raw and not show_smooth:
         raise ValueError("nothing to show; both raw and smooth plots disabled")
 
@@ -272,26 +281,63 @@ def plot_training_metrics(
     }
     hparam_colors = _pick_hparam_colors(df, hparams)
 
+    def plot_with_meta(ax, *args, name, **kwargs):
+        line = one(ax.plot(*args, **kwargs))
+        line.meta = dict(
+                name=name,
+                foreground=True,
+        )
+        
+    def format_coord(df, kd_tree, ax, x_cursor, y_cursor):
+        xy_cursor = np.array([x_cursor, y_cursor])
+        i = kd_tree.query(
+                xy_cursor.reshape(1, -1),
+                return_distance=False,
+        ).item()
+
+        # Get the distance to the point in pixels.
+        xy_cursor_fig = ax.transData.transform(xy_cursor)
+        xy_data_fig = ax.transData.transform(kd_tree.data[i])
+
+        dist_cursor_fig = np.linalg.norm(xy_cursor_fig - xy_data_fig)
+
+        if dist_cursor_fig > 10:
+            return ''
+
+        labels = [f'name={Path(df.item(i, "name")).name}']
+        labels += [f'{k}={df.item(i, k)!r}' for k in hparams]
+        return '\t\t'.join(labels)
+
     for i, metric in enumerate(metrics):
         t_raw = []
         y_raw = []
         color_raw = []
+        name_raw = []
 
         if metric not in df_by_metric:
             did_you_mean = '\n'.join('- ' + k for k in sorted(df_by_metric))
             raise ValueError(f"can't find metric: {metric}\n\nDid you mean:\n{did_you_mean}")
 
+        df_i = df_by_metric[metric]
+        t_all = x_getters[x](df_i[x].to_numpy())
+        y_all = df_i['value'].to_numpy()
+        ty_all = np.stack((t_all, y_all), axis=1)
+        kd_tree = KDTree(ty_all)
+
+        format_coord_metric = partial(format_coord, df_i, kd_tree)
+
         # This loop plots the "primary" curves, i.e. the ones that are labeled 
         # and solidly colored.  This could be either the raw data or the 
         # smoothed data, depending on what the user asked for.
 
-        for df_i in df_by_metric[metric].partition_by('name'):
-            t = x_getters[x](df_i[x].to_numpy())
-            y = df_i['value'].to_numpy()
+        for (name,), df_ij in df_i.partition_by('name', as_dict=True).items():
+            t = x_getters[x](df_ij[x].to_numpy())
+            y = df_ij['value'].to_numpy()
 
             t_raw.append(t)
             y_raw.append(y)
             color_raw.append([])
+            name_raw.append(name)
 
             if show_smooth:
                 t, y = _apply_smoothing(t, y)
@@ -299,21 +345,24 @@ def plot_training_metrics(
             for j, hparam in enumerate(hparams):
                 ax = axes[j,i]
 
-                hparam_value = one(df_i[hparam].unique())
+                hparam_value = one(df_ij[hparam].unique())
                 if hparam_value is not None:
                     color = hparam_colors[hparam, hparam_value]
                     color_raw[-1].append((j, color))
 
-                    ax.plot(
-                            t, y,
+                    plot_with_meta(
+                            ax, t, y,
                             label=f'{hparam_value}',
                             color=color,
+                            name=name,
                     )
 
                 if j == 0:
                     ax.set_title(metric)
                 if j == len(hparams) - 1:
                     ax.set_xlabel(x_labels[x])
+
+                ax.format_coord = partial(format_coord_metric, ax)
 
         # This loops plots the "secondary" curves, i.e. the ones that are 
         # unlabeled, mostly transparent, and have no effect on the y-limits.  
@@ -323,9 +372,14 @@ def plot_training_metrics(
         if show_raw and show_smooth:
             ylim = axes[0,i].get_ylim()
 
-            for t, y, colors in zip(t_raw, y_raw, color_raw):
+            for t, y, colors, name in zip(t_raw, y_raw, color_raw, name_raw):
                 for j, color in colors:
-                    axes[j,i].plot(t, y, color=color, alpha=0.2)
+                    plot_with_meta(
+                            axes[j,i], t, y,
+                            color=color,
+                            alpha=0.2,
+                            name=name,
+                    )
                     axes[j,i].set_ylim(*ylim)
 
     t = x_getters[x](df[x].to_numpy())
@@ -352,6 +406,118 @@ def plot_training_metrics(
             )
 
         ax_row[-1].axis('off')
+
+def launch_pyplot_gui(hparams_df):
+    import pyperclip
+    from matplotlib.backend_bases import MouseButton
+
+    def on_click(event):
+        if event.button is not MouseButton.LEFT:
+            return
+        if not event.inaxes:
+            return
+
+        # This lock indicates that some other UI action is pending, e.g. a 
+        # click-and-drag zoom.
+        if event.inaxes.figure.canvas.widgetlock.locked():
+            return
+
+        # Find the line closest to where the user clicked:
+
+        click_names = set()
+
+        for line in event.inaxes.get_lines():
+            if not hasattr(line, 'meta'):
+                continue
+
+            line.set_pickradius(3)
+            hit, details = line.contains(event)
+
+            if hit:
+                click_names.add(line.meta['name'])
+
+        # Highlight the selected lines:
+
+        if not click_names:
+            mode = 'all'
+        elif not event.key:
+            mode = 'reset'
+        elif 'control' in event.key:
+            mode = 'remove'
+        elif 'shift' in event.key:
+            mode = 'add'
+        else:
+            mode = 'reset'
+
+        highlight_trajectories(click_names, mode)
+
+        # Copy the selected hyperparameters to the clipboard:
+
+        fg_names = get_foreground_names()
+        hparams_df\
+                .filter(pl.col('name').is_in(fg_names))\
+                .write_ndjson(fp := StringIO())
+
+        pyperclip.copy(fp.getvalue())
+
+    plt.connect('button_release_event', on_click)
+    plt.show()
+
+def highlight_trajectories(names, mode):
+
+    def move_to_foreground(line):
+        if line.meta['foreground']:
+            return
+        else:
+            line.meta['foreground'] = True
+            color = line.meta.pop('color')
+            line.set_color(color)
+            line.zorder += 100
+
+    def move_to_background(line):
+        if line.meta['foreground']:
+            line.meta['foreground'] = False
+            line.meta['color'] = line.get_color()
+            line.set_color('#dddddd')
+            line.zorder -= 100
+        else:
+            return
+
+    def no_change(line):
+        pass
+
+    # The keys are (mode, is selected) tuples.
+    actions = {
+            ('all', True): move_to_foreground,
+            ('all', False): move_to_foreground,
+
+            ('reset', True): move_to_foreground,
+            ('reset', False): move_to_background,
+
+            ('add', True): move_to_foreground,
+            ('add', False): no_change,
+
+            ('remove', True): move_to_background,
+            ('remove', False): no_change,
+    }
+
+    for ax in plt.gcf().get_axes():
+        for line in ax.get_lines():
+            if not hasattr(line, 'meta'):
+                continue
+
+            action = actions[mode, line.meta['name'] in names]
+            action(line)
+
+    plt.draw()
+
+def get_foreground_names():
+    return {
+            line.meta['name']
+            for ax in plt.gcf().get_axes()
+            for line in ax.get_lines()
+            if hasattr(line, 'meta') and line.meta['foreground']
+    }
 
 def infer_elapsed_time(t):
     from sklearn.ensemble import IsolationForest
@@ -453,8 +619,7 @@ def join_hparams(df, hparams):
             df
             .join(
                 hparams.with_row_index(),
-                left_on=pl.col('name').str.split('/').list.last(),
-                right_on='name',
+                on='name',
                 how='left',
             )
             .sort('index')
