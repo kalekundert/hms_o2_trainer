@@ -1,6 +1,9 @@
 import os
 import inspect
 
+from contextlib import contextmanager
+from more_itertools import first
+
 def get_trainer(
         *,
         dry_run=False,
@@ -76,12 +79,24 @@ def get_trainer(
     )
 
 def show_layers(model, data, **kwargs):
-    import torchinfo
-    from more_itertools import first
+    from torchtnt.utils.module_summary import (
+            get_module_summary, get_summary_table
+    )
 
     data.setup('fit')
-    x, y = first(data.train_dataloader())
-    torchinfo.summary(model.model, input_data=[x], **kwargs)
+    x = first(data.train_dataloader())
+
+    # Run the model once, to make sure any uninitialized buffers are 
+    # materialized.
+    model(x)
+    model.eval()
+
+    summary = get_module_summary(model, x)
+
+    # The `summary` object is pretty easy to work with.  I can format my own 
+    # table, more nicely.
+    table = get_summary_table(summary)
+    print(table)
 
 def show_dag(model, data, **kwargs):
     """
@@ -97,11 +112,25 @@ def show_dag(model, data, **kwargs):
     graph.
     """
     import torchlens as tl
-    from more_itertools import first
 
     model.eval()
     data.setup('fit')
-    x, y = first(data.train_dataloader())
 
-    tl.show_model_graph(model.model, x, **kwargs)
+    x = first(data.train_dataloader())
+    tl.show_model_graph(model, [x], **kwargs)
 
+@contextmanager
+def show_memory(snapshot_path: str = 'cuda_mem.pkl'):
+    import torch.cuda
+    from humanize import naturalsize as bytes
+
+    torch.cuda.memory._record_memory_history()
+
+    try:
+        yield
+
+    finally:
+        torch.cuda.memory._dump_snapshot(snapshot_path)
+
+        print('Max VRAM Allocated:', bytes(torch.cuda.max_memory_allocated()))
+        print('Max VRAM Reserved: ', bytes(torch.cuda.max_memory_reserved()))
