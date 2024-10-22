@@ -2,8 +2,8 @@
 Compare metrics between different training runs.
 
 Usage:
-    hot_plot <logs>... [-m <metrics>] [-p <hparams>] [-k <regex>]
-        [-o <path>] [-f1st] [-ASTVL]
+    hot_plot [<logs>...] [-c <config>] [-m <metrics>] [-n <names>]
+        [-k <regex>] [-o <path>] [-f1st] [-ASTVL]
 
 Arguments:
     <logs>
@@ -12,17 +12,18 @@ Arguments:
         be searched recursively for log files.
 
 Options:
+    -c --config <nt>        [default: hot_plot.nt]
+        A path to a NestedText [1] file that containing various plotting 
+        parameters.  See the `Configuration` section below for more information 
+        on the format of this file.
+        
     -m --metrics <strs>
         A comma separated list of the metrics to plot.  Glob-style patterns are 
         supported.  By default, the following metrics will be displayed if 
         present: loss, RMSE or MAE, pearson R, accuracy
 
-    -p --hparams <csv>      [default: hparams.csv]
-        A path to a CSV file describing the hyperparameters for each training 
-        run.  The first row gives the name of each hyperparameter, and the 
-        following rows give the corresponding values for each run. The table 
-        must contain one value called "name", which gives the name of the 
-        directory containing the logs for the run in question.
+    -n --models <names>
+        A comma-separated list of model names to plot.
 
     -k --select <sql>
         Only show models that are selected by the given SQL expression.  The 
@@ -41,7 +42,7 @@ Options:
     -f --force-reload
         Ignore any caches and parse the training data from scratch.
 
-    -1 --concat-hparams
+    -1 --squash-hparams
         Instead of making a separate row of plots for each hyperparameter, plot 
         everything in a single row.  For smaller experiments, this might be 
         easier to understand than the default.
@@ -69,70 +70,273 @@ Options:
     -L --hide-loss
         Don't plot the loss function.  This option is ignored if `--metrics` is 
         specified.
+
+Configuration:
+
+    Most of the options that can be specified on the command line (and some 
+    that can't) can be specified via a configuration file.  The file is 
+    typically named `hot_plot.nt`, but the `--config` option can be used to 
+    specify a different file.  The file should be in the NestedText [1] format, 
+    and should have the following structure.  All values are optional:
+
+        logs: See `<logs>`.
+
+        hparams: A CSV-formatted string describing the hyperparameters for each 
+            training run.  The first row gives the name of each hyperparameter, 
+            and the following rows give the corresponding values for each run. 
+            The table must contain one value called "name", which gives the 
+            name of the directory containing the logs for the run in question.
+
+        models:
+            names: See `--models`, except that the names should be specified as 
+                a list rather than a comma-separated string.
+
+            sql: See `--select`.
+
+        metrics:
+          <metric name>:
+            title: How to label this metric on the plot.
+            ylim: A space-separated pair of two values: the low and high limits 
+                of the y-axis for this metric.  The full python floating point 
+                syntax (including most binary operators) can be used for each 
+                value.
+
+        options:
+            x unit: Which unit to display on the x-axis.  Must be one of 
+                'step', 'elapsed_time', or 'epoch'.  See `--steps` and 
+                `--elapsed-time`.
+
+            squash hparams: See `--squash-hparams`.  Must be 'yes' or 'no'.
+            hide raw: See `--hide-raw`.  Must be 'yes' or 'no'.
+            hide smooth: See `--hide-smooth`.  Must be 'yes' or 'no'.
+            hide train: See `--hide-train`.  Must be 'yes' or 'no'.
+            hide val: See `--hide-val`.  Must be 'yes' or 'no'.
+            hide loss: See `--hide-loss`.  Must be 'yes' or 'no'.
+
+References:
+[1] https://nestedtext.org
 """
 
 import polars as pl
 import numpy as np
 import matplotlib.pyplot as plt
 import fnmatch
+import byoc
 
-from pathlib import Path
+from byoc import NtConfig, DocoptConfig, Key, Func
+from voluptuous import Schema, Any
 from itertools import product
 from more_itertools import one, unique_everseen as unique
+from contextlib import nullcontext
 from operator import itemgetter
 from functools import partial
+from pathlib import Path
 from io import StringIO
+
+def hparams_from_csv(csv: str):
+    from io import StringIO
+    csv_io = StringIO(csv)
+    return load_hparams(csv_io)
+
+def hparams_from_default_file():
+    # This function is meant to maintain backwards compatibility with my old 
+    # API, which allowed hyperparameters to be specified via a file called 
+    # `hparams.csv`.  New code should use `hot_plot.nt`.
+
+    path = Path('hparams.csv')
+    
+    if not path.exists():
+        raise byoc.NoValueFound
+
+    return load_hparams(path)
+
+def get_sql_name_expr(names):
+    if not names:
+        raise ValueError("found empty list of names to select")
+    return "name IN ('" + "', '".join(names) + "')"
+
+def join_sql_exprs(exprs):
+    return ' AND '.join(exprs)
+
+def parse_escapes(x):
+    return x.encode('raw_unicode_escape').decode('unicode_escape')
+
+def parse_paths(paths):
+    return [Path(x) for x in paths]
+
+def parse_ylim(ylim: str):
+    fields = ylim.split()
+
+    if len(fields) != 2:
+        raise ValueError(f"expected 2 ylim values (low and high), got: {ylim!r}")
+
+    return {
+            k: byoc.float_eval(v)
+            for k, v in zip(['bottom', 'top'], fields, strict=True)
+            if v != '-'
+    }
+
+def parse_comma_list(x):
+    return x.split(',')
+
+def parse_bool(x):
+    if x == 'yes':
+        return True
+    if x == 'no':
+        return False
+
+    raise ValueError(f"expected 'yes' or 'no', got: {x!r}")
+
+class App:
+    __config__ = [
+            NtConfig.setup(
+                path_getter=lambda app: app.config_path,
+                schema=Schema({
+                    'logs': [str],
+                    'hparams': str,
+                    'models': {
+                        'names': [str],
+                        'sql': str,
+                    },
+                    'metrics': {
+                        str: {
+                            'title': parse_escapes,
+                            'ylim': parse_ylim,
+                        },
+                    },
+                    'options': {
+                        'x unit': Any('step', 'elapsed_time', 'epoch'),
+                        'squash hparams': parse_bool,
+                        'hide raw': parse_bool,
+                        'hide smooth': parse_bool,
+                        'hide train': parse_bool,
+                        'hide val': parse_bool,
+                        'hide loss': parse_bool,
+                    },
+                }),
+            ),
+            DocoptConfig.setup(usage_getter=lambda app: __doc__),
+    ]
+
+    config_path = byoc.param(
+            Key(DocoptConfig, '--config', cast=Path),
+            default=Path('hot_plot.nt'),
+    )
+    output_path = byoc.param(
+            Key(DocoptConfig, '--output', cast=Path),
+            default=None,
+    )
+    logs = byoc.param(
+            Key(DocoptConfig, '<logs>'),
+            Key(NtConfig, 'logs'),
+            cast=parse_paths,
+            default_factory=lambda: [Path('.')],
+    )
+    force_reload = byoc.param(
+            Key(DocoptConfig, '--force-reload'),
+            default=False,
+    )
+    models_sql = byoc.param(
+            Key(DocoptConfig, '--models', cast=[parse_comma_list, get_sql_name_expr]),
+            Key(DocoptConfig, '--select'),
+            Key(NtConfig, ['models', 'names'], cast=get_sql_name_expr),
+            Key(NtConfig, ['models', 'sql']),
+            pick=join_sql_exprs,
+    )
+    metric_globs = byoc.param(
+            Key(DocoptConfig, '--metrics', cast=parse_comma_list),
+            Key(NtConfig, 'metrics', cast=lambda x: list(x.keys())),
+            default=None,
+    )
+    metric_styles = byoc.param(
+            Key(NtConfig, 'metrics'),
+            default_factory=dict,
+    )
+    hparams = byoc.param(
+            Key(NtConfig, 'hparams', cast=hparams_from_csv),
+            Func(hparams_from_default_file),
+            default=None,
+    )
+    squash_hparams = byoc.param(
+            Key(DocoptConfig, '--squash-hparams'),
+            Key(NtConfig, ['options', 'squash hparams']),
+            default=False,
+    )
+    hide_raw = byoc.param(
+            Key(DocoptConfig, '--hide-raw'),
+            Key(NtConfig, ['options', 'hide raw']),
+            default=False,
+    )
+    hide_smooth = byoc.param(
+            Key(DocoptConfig, '--hide-smooth'),
+            Key(NtConfig, ['options', 'hide smooth']),
+            default=False,
+    )
+    hide_train = byoc.param(
+            Key(DocoptConfig, '--hide-train'),
+            Key(NtConfig, ['options', 'hide train']),
+            default=False,
+    )
+    hide_val = byoc.param(
+            Key(DocoptConfig, '--hide-val'),
+            Key(NtConfig, ['options', 'hide val']),
+            default=False,
+    )
+    hide_loss = byoc.param(
+            Key(DocoptConfig, '--hide-loss'),
+            Key(NtConfig, ['options', 'hide loss']),
+            default=False,
+    )
+    x_unit = byoc.param(
+            Key(DocoptConfig, '--steps', cast=lambda x: 'step'),
+            Key(DocoptConfig, '--elapsed-time', cast=lambda x: 'elapsed_time'),
+            Key(NtConfig, ['options', 'x unit']),
+            default='epoch',
+    )
 
 def main():
     try:
-        import docopt
+        app = App()
+        byoc.load(app)
 
-        args = docopt.docopt(__doc__)
         df = load_tensorboard_logs(
-                log_paths=map(Path, args['<logs>']),
-                refresh=args['--force-reload'],
+                log_paths=app.logs,
+                refresh=app.force_reload,
         )
 
-        if args['--metrics']:
-            metrics = pick_metrics(df, args['--metrics'])
+        if app.metric_globs:
+            metrics = pick_custom_metrics(df, app.metric_globs)
         else:
             metrics = pick_default_metrics(
                     df,
-                    include_train=not args['--hide-train'],
-                    include_val=not args['--hide-val'],
-                    include_loss=not args['--hide-loss'],
+                    include_train=not app.hide_train,
+                    include_val=not app.hide_val,
+                    include_loss=not app.hide_loss,
             )
 
-        if Path(args['--hparams']).exists():
-            hparams_df = load_hparams(args['--hparams'])
-            df = join_hparams(df, hparams_df)
-            hparams = [x for x in hparams_df.columns if x != 'name']
+        if app.hparams is not None:
+            df = join_hparams(df, app.hparams)
+            hparams = [x for x in app.hparams.columns if x != 'name']
         else:
-            hparams_df = df['name'].unique()
+            app.hparams = df['name'].unique()
             hparams = ['name']
 
-        if k := args['--select']:
-            df = df.sql(f'SELECT * from self WHERE {k}')
-
-        if args['--steps']:
-            x = 'step'
-        elif args['--elapsed-time']:
-            x = 'elapsed_time'
-        else:
-            x = 'epoch'
+        if app.models_sql:
+            df = df.sql(f'SELECT * from self WHERE {app.models_sql}')
 
         plot_training_metrics(
                 df, metrics, hparams,
-                x=x,
-                show_raw=not args['--hide-raw'],
-                show_smooth=not args['--hide-smooth'],
-                concat_hparams=args['--concat-hparams'],
+                x=app.x_unit,
+                metric_styles=app.metric_styles,
+                show_raw=not app.hide_raw,
+                show_smooth=not app.hide_smooth,
+                squash_hparams=app.squash_hparams,
         )
 
-        if out_path := args['--output']:
-            plt.savefig(out_path)
+        if app.output_path:
+            plt.savefig(app.output_path)
         else:
-            launch_pyplot_gui(hparams_df)
+            launch_pyplot_gui(app.hparams)
 
     except KeyboardInterrupt:
         pass
@@ -236,16 +440,17 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
 def plot_training_metrics(
         df, metrics, hparams, *,
         x='step',
+        metric_styles={},
         show_raw=True,
         show_smooth=True,
-        concat_hparams=False,
+        squash_hparams=False,
 ):
     from sklearn.neighbors import KDTree
 
     if not show_raw and not show_smooth:
         raise ValueError("nothing to show; both raw and smooth plots disabled")
 
-    if concat_hparams:
+    if squash_hparams:
         col = '; '.join(hparams)
         df = df.with_columns(
                 pl.concat_list(hparams).list.join('; ').alias(col)
@@ -261,8 +466,16 @@ def plot_training_metrics(
             nrows=nrows,
             constrained_layout=True,
             squeeze=False,
-            sharex=True,
+            width_ratios=(ncols - 1) * [15] + [1],
     )
+
+    for ax_row in axes:
+        for ax in ax_row[:-1]:
+            ax.sharex(axes[0, 0])
+
+    for ax_col in axes.T[:-1]:
+        for ax in ax_col[1:]:
+            ax.sharey(ax_col[0])
 
     x_labels = {
             'epoch': 'epochs',
@@ -322,6 +535,7 @@ def plot_training_metrics(
         t_all = x_getters[x](df_i[x].to_numpy())
         y_all = df_i['value'].to_numpy()
         ty_all = np.stack((t_all, y_all), axis=1)
+        ty_all = _remove_nan_inf_rows(ty_all)
         kd_tree = KDTree(ty_all)
 
         format_coord_metric = partial(format_coord, df_i, kd_tree)
@@ -358,7 +572,10 @@ def plot_training_metrics(
                     )
 
                 if j == 0:
-                    ax.set_title(metric)
+                    style = metric_styles.get(metric, {})
+                    ax.set_title(style.get('title', metric))
+                    ax.set_ylim(**style.get('ylim', dict(auto=True)))
+
                 if j == len(hparams) - 1:
                     ax.set_xlabel(x_labels[x])
 
@@ -386,26 +603,38 @@ def plot_training_metrics(
     axes[0,0].set_xlim(t.min(), t.max())
 
     for i, ax_row in enumerate(axes):
+        hparam = hparams[i]
         labels = ax_row[0].get_legend_handles_labels()
 
-        if any(labels):
+        if not any(labels):
+            continue
+
+        if hparam in hparam_colors:
+            xlim = ax_row[-1].get_xlim()
+            fig.colorbar(
+                    mappable=hparam_colors[hparam],
+                    cax=ax_row[-1],
+                    label=hparam,
+            )
+            ax_row[-1].set_xlim(xlim)
+            #ax_row[-1].axis('off')
+
+        else:
             h, l = zip(
                     *unique(
                         zip(*labels),
                         key=itemgetter(1),
                     )
             )
-
             ax_row[-1].legend(
                     h, l,
                     borderaxespad=0,
-                    title=hparams[i],
+                    title=hparam,
                     alignment='left',
                     frameon=False,
                     loc='center left',
             )
-
-        ax_row[-1].axis('off')
+            ax_row[-1].axis('off')
 
 def launch_pyplot_gui(hparams_df):
     import pyperclip
@@ -548,12 +777,12 @@ def infer_elapsed_time(t):
 
     return _cumsum0(dt)
 
-def pick_metrics(df, spec):
+def pick_custom_metrics(df, globs):
     known_metrics = sorted(set(df['metric']))
 
     metrics = []
-    for pattern in spec.split(','):
-        metrics += fnmatch.filter(known_metrics, pattern)
+    for glob in globs:
+        metrics += fnmatch.filter(known_metrics, glob)
 
     return list(unique(metrics))
 
@@ -589,13 +818,18 @@ def pick_default_metrics(
     if 'val/accuracy' in known_metrics:
         metrics.append('accuracy')
 
-    return [
+    candidates = [
             stage.format(metric)
             for stage, metric in product(stages, metrics)
-            if stage.format(metric) in known_metrics
+    ]
+    candidates += [
+            'gen/accuracy',
+            'gen/frechet_dist',
     ]
 
-def load_hparams(path):
+    return [x for x in candidates if x in known_metrics]
+
+def load_hparams(path_or_io):
     import csv
 
     # Polars doesn't have the option to not infer data types, if the number of 
@@ -603,14 +837,19 @@ def load_hparams(path):
     # strings even if they're composed entirely of digits, we need to parse the 
     # file ourselves.
 
-    with open(path) as f:
+    if isinstance(path_or_io, Path):
+        open_csv = open(path_or_io)
+    else:
+        open_csv = nullcontext(path_or_io)
+
+    with open_csv as f:
         rows = list(csv.reader(f))
 
     head = rows[0]
     body = rows[1:]
 
     if 'name' not in head:
-        raise ValueError(f"hyperparameter table must contain 'name' column: {path}")
+        raise ValueError(f"hyperparameter table must contain 'name' column: {path_or_io}")
 
     return pl.DataFrame(body, head, orient='row')
 
@@ -620,7 +859,7 @@ def join_hparams(df, hparams):
             .join(
                 hparams.with_row_index(),
                 on='name',
-                how='left',
+                how='inner',
             )
             .sort('index')
             .drop('index')
@@ -631,8 +870,26 @@ def _pick_hparam_colors(df, hparams):
 
     for hparam in hparams:
         hparam_values = df[hparam].unique(maintain_order=True).drop_nulls()
-        for i, value in enumerate(hparam_values):
-            hparam_colors[hparam, value] = f'C{i}'
+
+        # For now, I just hard-coded these two parameters in.  Later, I want to 
+        # add the ability to parse hyperparameter options from a config file.
+
+        if hparam in ['flops', 'params']:
+            from matplotlib.cm import ScalarMappable
+            from matplotlib.colors import Normalize
+
+            hparam_floats = hparam_values.cast(float)
+
+            norm = Normalize(min(hparam_floats), max(hparam_floats))
+            cm = ScalarMappable(norm, 'viridis')
+
+            hparam_colors[hparam] = cm
+            for value in hparam_values:
+                hparam_colors[hparam, value] = cm.to_rgba(float(value))
+
+        else:
+            for i, value in enumerate(hparam_values):
+                hparam_colors[hparam, value] = f'C{i}'
 
     return hparam_colors
 
@@ -640,6 +897,15 @@ def _apply_smoothing(x, y):
     from sklearn.neighbors import LocalOutlierFactor
     from scipy.signal import savgol_filter
 
+    # Remove missing data:
+    i = np.isfinite(y)
+    x = x[i]
+    y = y[i]
+
+    if len(x) < 5:
+        return x, y
+
+    # Remove outliers:
     window_length = max(len(x) // 10, 15)
 
     lof = LocalOutlierFactor(2)
@@ -655,6 +921,7 @@ def _apply_smoothing(x, y):
         x_inlier = x
         y_inlier = y
 
+    # Create smoothed curve:
     y_smooth = savgol_filter(
             y_inlier,
             window_length=window_length,
@@ -669,6 +936,9 @@ def _cumsum0(x):
     y[0] = 0
     np.cumsum(x, out=y[1:])
     return y
+
+def _remove_nan_inf_rows(x):
+    return x[np.isfinite(x).all(axis=1)]
 
 
 if __name__ == '__main__':
