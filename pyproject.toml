@@ -29,7 +29,9 @@ show = [
   'torchlens',
 ]
 plot = [
+  'byoc',
   'docopt',
+  'humanize',
   'matplotlib',
   'numpy',
   'polars',
@@ -37,6 +39,7 @@ plot = [
   'scikit-learn',
   'scipy',
   'tbparse',
+  'voluptuous',
 ]
 memprof = [
   'docopt',
@@ -57,6 +60,7 @@ doc = [
 [project.scripts]
 hot_sbatch = "hms_o2_trainer.sbatch:main"
 hot_plot = "hms_o2_trainer.analysis:main"
+hot_progress = "hms_o2_trainer.progress:main"
 
 [project.urls]
 'Documentation' = 'https://hms-o2-trainer.readthedocs.io/en/latest/'
