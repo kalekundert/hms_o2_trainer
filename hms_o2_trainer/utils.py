@@ -13,7 +13,15 @@ def is_sbatch():
 
     squeue = 'squeue', '--Format=batchflag', '--jobs', job_id
     p = run(squeue, capture_output=True)
-    head, *rows = (x.strip() for x in p.stdout.decode().splitlines())
+
+    try:
+        head, *rows = (x.strip() for x in p.stdout.decode().splitlines() if x)
+    except:
+        # One of my long-running jobs failed on this line, and I'm not sure 
+        # why.  Hoping to catch some better debugging information next time 
+        # this happens.
+        print(f'$ {" ".join(squeue)}\n{p.stdout!r}')
+        raise
 
     return head == 'BATCH_FLAG' and all(x == '1' for x in rows)
 
