@@ -140,13 +140,9 @@ def show_memory(snapshot_path: str = 'cuda_mem.pkl'):
     import torch.cuda
     from humanize import naturalsize as bytes
 
-    torch.cuda.memory._record_memory_history()
-
     try:
         yield
 
     finally:
-        torch.cuda.memory._dump_snapshot(snapshot_path)
-
         print('Max VRAM Allocated:', bytes(torch.cuda.max_memory_allocated()))
         print('Max VRAM Reserved: ', bytes(torch.cuda.max_memory_reserved()))
