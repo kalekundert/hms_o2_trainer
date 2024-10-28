@@ -4,6 +4,12 @@ import inspect
 from contextlib import contextmanager
 from more_itertools import first
 
+KNOWN_METRICS = {
+        'val/loss': 'min',
+        'gen/accuracy': 'max',
+        'gen/frechet_dist': 'min',
+}
+
 def get_trainer(
         *,
         dry_run=False,
@@ -11,6 +17,8 @@ def get_trainer(
         out_dir=None,
         version=None,
         ckpt_metric='val/loss',
+        ckpt_mode=None,
+        ckpt_top_k=1,
         **trainer_kwargs,
 ):
     import torch
@@ -30,12 +38,20 @@ def get_trainer(
     # 'high' setting as a compromise to be optimized later.
     torch.set_float32_matmul_precision(float32_precision)
 
+    if not ckpt_mode:
+        ckpt_mode = KNOWN_METRICS[ckpt_metric]
+    if not ckpt_mode:
+        raise ValueError("must either (i) specify `ckpt_mode` or (ii) specify `ckpt_metric` with known mode")
+
     callbacks = [
             *trainer_kwargs.pop('callbacks', []),
 
-            # This callback is required for requeueing to work.
+            # This callback, in particular the `save_last=True` argument, is 
+            # required for requeueing to work.
             ModelCheckpoint(
                 monitor=ckpt_metric,
+                mode=ckpt_mode,
+                save_top_k=ckpt_top_k,
                 save_last=True,
                 every_n_epochs=1,
                 verbose=True,
