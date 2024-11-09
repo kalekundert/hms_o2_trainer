@@ -282,6 +282,7 @@ def parse_gpu_archs():
             'a100': 'ampere',
             'a100.mig': 'ampere',
             'a40': 'ampere',
+            'a6000': 'ampere',
             'l40': 'lovelace',
             'l40s': 'lovelace',
             'rtx6000': 'turing',
