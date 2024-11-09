@@ -82,6 +82,11 @@ def get_trainer(
             kwargs = dict(ckpt_path='last') | kwargs
             return super().fit(*args, **kwargs)
 
+        def save_checkpoint(self, path, *args, **kwargs):
+            dir = Path(path).parent
+            dir.touch('.nobackup')
+            return super().save_checkpoint(path, *args, **kwargs)
+
     return HmsO2Trainer(
             callbacks=callbacks,
             logger=TensorBoardLogger(
