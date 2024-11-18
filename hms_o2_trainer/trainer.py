@@ -83,9 +83,11 @@ def get_trainer(
             return super().fit(*args, **kwargs)
 
         def save_checkpoint(self, path, *args, **kwargs):
-            dir = Path(path).parent
-            dir.touch('.nobackup')
-            return super().save_checkpoint(path, *args, **kwargs)
+            super().save_checkpoint(path, *args, **kwargs)
+
+            no_backup = Path(path).parent / '.nobackup'
+            if no_backup.parent.is_dir():
+                no_backup.touch()
 
     return HmsO2Trainer(
             callbacks=callbacks,
