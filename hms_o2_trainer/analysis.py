@@ -129,7 +129,6 @@ from itertools import product
 from more_itertools import one, unique_everseen as unique
 from contextlib import nullcontext
 from operator import itemgetter
-from functools import partial
 from pathlib import Path
 from io import StringIO
 
@@ -146,7 +145,7 @@ def hparams_from_default_file():
     path = Path('hparams.csv')
     
     if not path.exists():
-        raise byoc.NoValueFound
+        return None
 
     return load_hparams(path)
 
@@ -445,8 +444,6 @@ def plot_training_metrics(
         show_smooth=True,
         squash_hparams=False,
 ):
-    from sklearn.neighbors import KDTree
-
     if not show_raw and not show_smooth:
         raise ValueError("nothing to show; both raw and smooth plots disabled")
 
@@ -501,25 +498,6 @@ def plot_training_metrics(
                 foreground=True,
         )
         
-    def format_coord(df, kd_tree, ax, x_cursor, y_cursor):
-        xy_cursor = np.array([x_cursor, y_cursor])
-        i = kd_tree.query(
-                xy_cursor.reshape(1, -1),
-                return_distance=False,
-        ).item()
-
-        # Get the distance to the point in pixels.
-        xy_cursor_fig = ax.transData.transform(xy_cursor)
-        xy_data_fig = ax.transData.transform(kd_tree.data[i])
-
-        dist_cursor_fig = np.linalg.norm(xy_cursor_fig - xy_data_fig)
-
-        if dist_cursor_fig > 10:
-            return ''
-
-        labels = [f'name={Path(df.item(i, "name")).name}']
-        labels += [f'{k}={df.item(i, k)!r}' for k in hparams]
-        return '\t\t'.join(labels)
 
     for i, metric in enumerate(metrics):
         t_raw = []
@@ -532,13 +510,6 @@ def plot_training_metrics(
             raise ValueError(f"can't find metric: {metric}\n\nDid you mean:\n{did_you_mean}")
 
         df_i = df_by_metric[metric]
-        t_all = x_getters[x](df_i[x].to_numpy())
-        y_all = df_i['value'].to_numpy()
-        ty_all = np.stack((t_all, y_all), axis=1)
-        ty_all = _remove_nan_inf_rows(ty_all)
-        kd_tree = KDTree(ty_all)
-
-        format_coord_metric = partial(format_coord, df_i, kd_tree)
 
         # This loop plots the "primary" curves, i.e. the ones that are labeled 
         # and solidly colored.  This could be either the raw data or the 
@@ -578,8 +549,6 @@ def plot_training_metrics(
 
                 if j == len(hparams) - 1:
                     ax.set_xlabel(x_labels[x])
-
-                ax.format_coord = partial(format_coord_metric, ax)
 
         # This loops plots the "secondary" curves, i.e. the ones that are 
         # unlabeled, mostly transparent, and have no effect on the y-limits.  
