@@ -13,7 +13,7 @@ KNOWN_METRICS = {
 def get_trainer(
         *,
         dry_run=False,
-        float32_precision='high',
+        matmul_precision='high',
         out_dir=None,
         version=None,
         ckpt_metric='val/loss',
@@ -36,7 +36,8 @@ def get_trainer(
     # support for the necessary acceleration.  I don't think there's a good way
     # of knowing a priori what the best setting should be; so I chose the
     # 'high' setting as a compromise to be optimized later.
-    torch.set_float32_matmul_precision(float32_precision)
+    if matmul_precision is not None:
+        torch.set_float32_matmul_precision(matmul_precision)
 
     if not ckpt_mode:
         ckpt_mode = KNOWN_METRICS[ckpt_metric]
@@ -73,7 +74,7 @@ def get_trainer(
     if version is None and is_slurm():
         version = get_job_id()
 
-    log.info("configure trainer: float32_matmul_precision=%s output_dir=%s version=%s", float32_precision, out_dir, version)
+    log.info("configure trainer: float32_matmul_precision=%s output_dir=%s version=%s", matmul_precision, out_dir, version)
 
     class HmsO2Trainer(L.Trainer):
 
