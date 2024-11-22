@@ -248,7 +248,11 @@ def get_blacklisted_nodes():
             # can often fix this, but I don't have permission to do that on the 
             # cluster.
             'compute-gc-17-244',
-            'compute-gc-17-249',
+
+            # 2024/11/20: I previously blacklisted gc-17-249 for the reason
+            # given above, but today I got an interactive session on this node,
+            # and it worked fine.  So I'm removing it from the blacklist.
+            #'compute-gc-17-249',
     ]
 
 def exclude_nodes_by_gpu_arch(arch):
