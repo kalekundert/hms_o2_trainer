@@ -99,6 +99,12 @@ def get_trainer(
                 default_hp_metric=False,
             ),
             fast_dev_run=(dry_run and 10),
+
+            # This assumes that we're using `mmgu.torch.InfiniteSampler`, which 
+            # I always do.  Still, this is a bit `atompaint` specific, which 
+            # makes me somewhat uneasy.
+            use_distributed_sampler=False,
+
             **trainer_kwargs,
     )
 
