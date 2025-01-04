@@ -18,28 +18,29 @@ of hyperparameters to test.  These scripts should be very short; I think of
 them as powerful config files.  Here's a representative example:
 
 ```python
-# compare_mlp_cnn.py
 import hms_o2_trainer as hot
 import sys
 
-# SBATCH
+#SBATCH --time=1-0:00:00
+#SBATCH --cpus-per-task=6
+#SBATCH --mem=16G
+#SBATCH --gres=gpu:1
 
 # Note that all details relating to the model and the data are delegated to 
 # these hypothetical third-party libraries.
 from my_models import get_model
 from my_data import get_data
 
-HPARAMS = hot.label_hparams(
-  '{model}_{data}',
-  dict(model='mlp', data='mnist'),
-  dict(model='cnn', data='mnist'),
-  dict(model='mlp', data='cifar'),
-  dict(model='cnn', data='cifar'),
-)
+HPARAMS = [
+    dict(model='mlp', data='mnist'),
+    dict(model='cnn', data='mnist'),
+    dict(model='mlp', data='cifar'),
+    dict(model='cnn', data='cifar'),
+]
 
 if __name__ == '__main__':
-    hparam_key = sys.argv[1] if len(sys.argv) == 2 else None
-    hparams_name, hparams = hot.require_hparams(hparam_key, HPARAMS)
+    hparams = hot.require_hparams_from_cli(HPARAMS)
+
     model = get_model(hparams['model'])
     data = get_data(hparams['data'])
 
@@ -49,5 +50,5 @@ if __name__ == '__main__':
 
 Submit the above script to the cluster:
 ```bash
-$ hot_sbatch --array 1-4 -- compare_mlp_cnn.py
+$ hot_sbatch --array 0-3 -- compare_mlp_cnn.py
 ```
