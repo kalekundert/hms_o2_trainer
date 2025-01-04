@@ -2,7 +2,7 @@
 Compare metrics between different training runs.
 
 Usage:
-    hot_plot [<logs>...] [-c <config>] [-m <metrics>] [-n <names>]
+    hot_plot [<logs>...] [-c <config>] [-m <metrics>] [-M] [-n <names>]
         [-k <regex>] [-o <path>] [-f1st] [-ASTVL]
 
 Arguments:
@@ -21,6 +21,9 @@ Options:
         A comma separated list of the metrics to plot.  Glob-style patterns are 
         supported.  By default, the following metrics will be displayed if 
         present: loss, RMSE or MAE, pearson R, accuracy
+
+    -M --show-metrics
+        Print a list of the available metrics, then exit.
 
     -n --models <names>
         A comma-separated list of model names to plot.
@@ -251,6 +254,10 @@ class App:
             Key(NtConfig, 'metrics'),
             default_factory=dict,
     )
+    show_metrics = byoc.param(
+            Key(DocoptConfig, '--show-metrics'),
+            default=False,
+    )
     hparams = byoc.param(
             Key(NtConfig, 'hparams', cast=hparams_from_csv),
             Func(hparams_from_default_file),
@@ -302,6 +309,10 @@ def main():
                 log_paths=app.logs,
                 refresh=app.force_reload,
         )
+
+        if app.show_metrics:
+            print_known_metrics(df)
+            raise SystemExit
 
         if app.metric_globs:
             metrics = pick_custom_metrics(df, app.metric_globs)
@@ -745,6 +756,10 @@ def infer_elapsed_time(t):
     dt[outlier_mask] = dt_mean
 
     return _cumsum0(dt)
+
+def print_known_metrics(df):
+    for metric in sorted(set(df['metric'])):
+        print(metric)
 
 def pick_custom_metrics(df, globs):
     known_metrics = sorted(set(df['metric']))
