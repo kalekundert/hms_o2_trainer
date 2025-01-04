@@ -1,10 +1,8 @@
-import torch
 import os
 
 from .logging import log
 from dataclasses import asdict
 from itertools import product
-from functools import partial
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -18,18 +16,7 @@ def make_hparams(factory, **kwargs):
 
     return hparams
 
-def label_hparams(key, *hparams):
-    if isinstance(key, str):
-        key = partial(interpolate, key)
-
-    assert callable(key)
-
-    return {
-            key(x): x
-            for x in hparams
-    }
-
-def require_hparams_from_cli(hparams):
+def require_hparams_from_cli(hparams, repr=repr):
     import docopt
     from __main__ import __file__, __doc__
 
@@ -40,49 +27,45 @@ Usage:
 
 Arguments:
     <hparams>
-        The hyperparameters to use for this training run, specified either as a 
-        name or an index number.  If the `$SLURM_ARRAY_TASK_ID` environment 
-        variable is set (as it would be for an array job), it will be the 
-        default value for this argument.  If no value is specified and no 
-        default is available, a list of possible hyperparameters will be 
-        printed to the terminal.
+        The hyperparameters to use for this training run, specified as an  
+        index number.  If the `$SLURM_ARRAY_TASK_ID` environment variable is 
+        set (as it would be for an array job), it will be the default value for 
+        this argument.  If no value is specified and no default is available, a 
+        list of possible hyperparameters will be printed to the terminal.
 """
 
     if __doc__:
         usage = __doc__.strip() + '\n\n' + usage
 
-    args = docopt.docopt(usage.strip())
-    return require_hparams(args['<hparams>'], hparams)
+    def maybe_int(x):
+        if x is None:
+            return None
 
-def require_hparams(key, hparams):
-    if key is None:
         try:
-            i = int(os.environ['SLURM_ARRAY_TASK_ID'])
-            key = list(hparams)[i]
+            return int(x)
+        except ValueError:
+            raise ValueError(f"expected a hyperparameter index between 0-{len(hparams)-1}, not {i!r}")
+
+    args = docopt.docopt(usage.strip())
+    i = maybe_int(args['<hparams>'])
+    return require_hparams(hparams, i, repr=repr)
+
+def require_hparams(hparams, i, repr=repr):
+    if i is None:
+        try:
+            i = os.environ['SLURM_ARRAY_TASK_ID']
 
         except KeyError:
             digits = len(str(len(hparams) - 1))
-            for i, known_key in enumerate(hparams):
-                print(f'{i:>{digits}} {known_key}')
+            for i, hp in enumerate(hparams):
+                print(f'{i:>{digits}} {repr(hp)}')
             raise SystemExit
 
-    if key not in hparams:
-        try:
-            i = int(key)
-            key = list(hparams)[i]
-        except ValueError:
-            pass
+    x = hparams[i]
 
-    log.info('using hyperparameters: %s', x := hparams[key])
+    log.info('using hyperparameters: %s', repr(x))
 
-    # try:
-    #     job_id = get_job_id()
-    # except KeyError:
-    #     pass
-    # else:
-    #     write_hparams(Path('hparams') / f'{job_id}.json', x)
-
-    return key, x
+    return x
 
 def write_hparams(path, hparams, encoder=None):
     import json
@@ -113,6 +96,4 @@ def interpolate(template, obj):
     else:
         return template.format(obj)
 
-def if_gpu(gpu_value, cpu_value):
-    return gpu_value if torch.cuda.is_available() else cpu_value
 
