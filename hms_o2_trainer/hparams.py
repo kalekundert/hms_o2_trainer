@@ -53,7 +53,7 @@ Arguments:
 def require_hparams(hparams, i, repr=repr):
     if i is None:
         try:
-            i = os.environ['SLURM_ARRAY_TASK_ID']
+            i = int(os.environ['SLURM_ARRAY_TASK_ID'])
 
         except KeyError:
             digits = len(str(len(hparams) - 1))
