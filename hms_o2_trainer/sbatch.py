@@ -78,6 +78,11 @@ Environment Variables:
             packages that are present as git repositories on the current system 
             will automatically be logged, regardless of this setting.  (Such 
             packages are considered "first party".)
+
+        HOT_BLACKLIST:
+            A colon-separated list of nodes to avoid running jobs on, e.g. due
+            to hardward errors or similar.  These nodes are used to populate
+            the `--exclude` argument to `sbatch`.
 """
 
 import re
@@ -236,24 +241,10 @@ def find_sbatch_comments(path):
     return args
 
 def get_blacklisted_nodes():
-    return [
-            # 2024/09/19: These nodes give the following error:
-            #   
-            #   RuntimeError: CUDA unknown error - this may be due to an 
-            #   incorrectly set up environment, e.g. changing env variable 
-            #   CUDA_VISIBLE_DEVICES after program start. Setting the available 
-            #   devices to be zero.
-            #
-            # An internet search indicates that restarting the nvidia driver 
-            # can often fix this, but I don't have permission to do that on the 
-            # cluster.
-            'compute-gc-17-244',
-
-            # 2024/11/20: I previously blacklisted gc-17-249 for the reason
-            # given above, but today I got an interactive session on this node,
-            # and it worked fine.  So I'm removing it from the blacklist.
-            #'compute-gc-17-249',
-    ]
+    try:
+        return os.environ['HOT_BLACKLIST'].split(':')
+    except KeyError:
+        return []
 
 def exclude_nodes_by_gpu_arch(arch):
     arch_ranks = [
