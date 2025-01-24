@@ -388,6 +388,7 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
             )
             .group_by('root', 'step')
             .min()
+            .sort('root', 'step')
     )
     df = (
             df
@@ -400,10 +401,16 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
             .filter(
                 pl.col('step').len().over('root', 'metric') > 1,
             )
-            .join(
+            .sort('root', 'step')
+
+            # For some reason I don't understand, the learning rates are 
+            # recorded one step before all the other metrics, including the 
+            # epoch labels.  So in order for this join to work for learning 
+            # rates, it needs to be an "as of" join.
+            .join_asof(
                 epochs,
-                on=['root', 'step'],
-                how='left',
+                by='root',
+                on='step',
             )
             .with_columns(
                 root=pl.concat_str(
