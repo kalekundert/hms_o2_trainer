@@ -126,7 +126,7 @@ import matplotlib.pyplot as plt
 import fnmatch
 import byoc
 
-from byoc import NtConfig, DocoptConfig, Key, Func
+from byoc import NtConfig, DocoptConfig, Key, Func, Value
 from voluptuous import Schema, Any
 from itertools import product
 from more_itertools import one, unique_everseen as unique
@@ -190,9 +190,11 @@ def parse_bool(x):
     raise ValueError(f"expected 'yes' or 'no', got: {x!r}")
 
 class App:
-    __config__ = [
-            NtConfig.setup(
-                path_getter=lambda app: app.config_path,
+
+    @byoc.configs
+    def iter_configs(self):
+        yield NtConfig(
+                lambda: self.config_path,
                 schema=Schema({
                     'logs': [str],
                     'hparams': str,
@@ -216,88 +218,86 @@ class App:
                         'hide loss': parse_bool,
                     },
                 }),
-            ),
-            DocoptConfig.setup(usage_getter=lambda app: __doc__),
-    ]
+        )
+        yield DocoptConfig(__doc__)
 
     config_path = byoc.param(
-            Key(DocoptConfig, '--config', cast=Path),
-            default=Path('hot_plot.nt'),
+            Key(DocoptConfig, '--config', apply=Path),
+            Value(Path('hot_plot.nt')),
     )
     output_path = byoc.param(
-            Key(DocoptConfig, '--output', cast=Path),
-            default=None,
+            Key(DocoptConfig, '--output', apply=Path),
+            Value(None),
     )
     logs = byoc.param(
             Key(DocoptConfig, '<logs>'),
             Key(NtConfig, 'logs'),
-            cast=parse_paths,
-            default_factory=lambda: [Path('.')],
+            Func(lambda: ['.']),
+            apply=parse_paths,
     )
     force_reload = byoc.param(
             Key(DocoptConfig, '--force-reload'),
-            default=False,
+            Value(False),
     )
     models_sql = byoc.param(
-            Key(DocoptConfig, '--models', cast=[parse_comma_list, get_sql_name_expr]),
+            Key(DocoptConfig, '--models', apply=[parse_comma_list, get_sql_name_expr]),
             Key(DocoptConfig, '--select'),
-            Key(NtConfig, ['models', 'names'], cast=get_sql_name_expr),
+            Key(NtConfig, ['models', 'names'], apply=get_sql_name_expr),
             Key(NtConfig, ['models', 'sql']),
             pick=join_sql_exprs,
     )
     metric_globs = byoc.param(
-            Key(DocoptConfig, '--metrics', cast=parse_comma_list),
-            Key(NtConfig, 'metrics', cast=lambda x: list(x.keys())),
-            default=None,
+            Key(DocoptConfig, '--metrics', apply=parse_comma_list),
+            Key(NtConfig, 'metrics', apply=lambda x: list(x.keys())),
+            Value(None),
     )
     metric_styles = byoc.param(
             Key(NtConfig, 'metrics'),
-            default_factory=dict,
+            Func(dict),
     )
     show_metrics = byoc.param(
             Key(DocoptConfig, '--show-metrics'),
-            default=False,
+            Value(False),
     )
     hparams = byoc.param(
-            Key(NtConfig, 'hparams', cast=hparams_from_csv),
+            Key(NtConfig, 'hparams', apply=hparams_from_csv),
             Func(hparams_from_default_file),
-            default=None,
     )
     squash_hparams = byoc.param(
             Key(DocoptConfig, '--squash-hparams'),
             Key(NtConfig, ['options', 'squash hparams']),
-            default=False,
+            Value(False),
     )
     hide_raw = byoc.param(
             Key(DocoptConfig, '--hide-raw'),
             Key(NtConfig, ['options', 'hide raw']),
-            default=False,
+            Value(False),
     )
     hide_smooth = byoc.param(
             Key(DocoptConfig, '--hide-smooth'),
             Key(NtConfig, ['options', 'hide smooth']),
-            default=False,
+            Value(False),
     )
     hide_train = byoc.param(
             Key(DocoptConfig, '--hide-train'),
             Key(NtConfig, ['options', 'hide train']),
-            default=False,
+            Value(False),
     )
     hide_val = byoc.param(
             Key(DocoptConfig, '--hide-val'),
             Key(NtConfig, ['options', 'hide val']),
-            default=False,
+            Value(False),
     )
     hide_loss = byoc.param(
             Key(DocoptConfig, '--hide-loss'),
             Key(NtConfig, ['options', 'hide loss']),
-            default=False,
+            Value(False),
     )
     x_unit = byoc.param(
-            Key(DocoptConfig, '--steps', cast=lambda x: 'step'),
-            Key(DocoptConfig, '--elapsed-time', cast=lambda x: 'elapsed_time'),
+            Key(DocoptConfig, '--steps', apply=lambda x: 'step'),
+            Key(DocoptConfig, '--elapsed-time', apply=lambda x: 'elapsed_time'),
             Key(NtConfig, ['options', 'x unit']),
-            default='epoch',
+            Value('epoch'),
     )
 
 def main():
