@@ -431,6 +431,9 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
                   .over(['root', 'metric'])
                   .alias('elapsed_time')
             )
+            .with_columns(
+                pl.col('metric').str.strip_suffix('_epoch'),
+            )
             .sort('name', 'metric', 'step')
             .select(
                 'root',
@@ -492,15 +495,19 @@ def plot_training_metrics(
         for ax in ax_col[1:]:
             ax.sharey(ax_col[0])
 
+    def get_x_epoch(df):
+        k = (df['epoch'].max() + 1) / df['step'].max()
+        return df['step'] * k
+
     x_labels = {
             'epoch': 'epochs',
             'step': 'steps (×1000)',
             'elapsed_time': 'elapsed time (h)',
     }
     x_getters = {
-            'epoch': lambda x: x + 1,
-            'step': lambda x: (x + 1) / 1000,
-            'elapsed_time': lambda x: x / 3600,
+            'epoch': get_x_epoch,
+            'step': lambda df: (df['step'] + 1) / 1000,
+            'elapsed_time': lambda df: df['elapsed_time'] / 3600,
     }
 
     df_by_metric = {
@@ -515,8 +522,10 @@ def plot_training_metrics(
                 name=name,
                 foreground=True,
         )
-        
 
+    t_min = float('inf')
+    t_max = -float('inf')
+        
     for i, metric in enumerate(metrics):
         t_raw = []
         y_raw = []
@@ -534,8 +543,11 @@ def plot_training_metrics(
         # smoothed data, depending on what the user asked for.
 
         for (name,), df_ij in df_i.partition_by('name', as_dict=True).items():
-            t = x_getters[x](df_ij[x].to_numpy())
+            t = x_getters[x](df_ij).to_numpy()
             y = df_ij['value'].to_numpy()
+
+            t_min = min(t_min, t.min())
+            t_max = max(t_max, t.max())
 
             t_raw.append(t)
             y_raw.append(y)
@@ -586,8 +598,7 @@ def plot_training_metrics(
                     )
                     axes[j,i].set_ylim(*ylim)
 
-    t = x_getters[x](df[x].to_numpy())
-    axes[0,0].set_xlim(t.min(), t.max())
+    axes[0,0].set_xlim(t_min, t_max)
 
     for i, ax_row in enumerate(axes):
         hparam = hparams[i]
@@ -792,7 +803,7 @@ def pick_default_metrics(
         stages += ['val/{}']
 
     if include_train:
-        stages += ['train/{}_epoch']
+        stages += ['train/{}']
 
     metrics = []
 
