@@ -16,7 +16,7 @@ def make_hparams(factory, **kwargs):
 
     return hparams
 
-def require_hparams_from_cli(hparams, repr=repr):
+def require_hparams_index_from_cli(hparams, repr=repr):
     import docopt
     from __main__ import __file__, __doc__
 
@@ -48,7 +48,11 @@ Arguments:
 
     args = docopt.docopt(usage.strip())
     i = maybe_int(args['<hparams>'])
-    return require_hparams(hparams, i, repr=repr)
+    return require_hparams(hparams, i, repr=repr), i
+
+def require_hparams_from_cli(hparams, repr=repr):
+    x, _ = require_hparams_index_from_cli(hparams, repr=repr)
+    return x
 
 def require_hparams(hparams, i, repr=repr):
     if i is None:
