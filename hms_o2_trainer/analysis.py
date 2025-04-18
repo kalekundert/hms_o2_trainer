@@ -3,7 +3,7 @@ Compare metrics between different training runs.
 
 Usage:
     hot_plot [<logs>...] [-c <config>] [-m <metrics>] [-M] [-n <names>]
-        [-k <regex>] [-o <path>] [-f1st] [-ASTVL]
+        [-k <regex>] [-o <path>] [-f1st] [-x <left>,<right>] [-ASTVL]
 
 Arguments:
     <logs>
@@ -16,7 +16,7 @@ Options:
         A path to a NestedText [1] file that containing various plotting 
         parameters.  See the `Configuration` section below for more information 
         on the format of this file.
-        
+
     -m --metrics <strs>
         A comma separated list of the metrics to plot.  Glob-style patterns are 
         supported.  By default, the following metrics will be displayed if 
@@ -31,7 +31,7 @@ Options:
     -k --select <sql>
         Only show models that are selected by the given SQL expression.  The 
         expression will be used in the following SQL statement:
-            
+
             SELECT * from models WHERE ...
 
         The `...` is what will be replaced by the given expression.  The 
@@ -55,6 +55,11 @@ Options:
 
     -t --elapsed-time
         Plot elapsed time on the x-axis, instead of the epoch.
+
+    -x --xlim <left>,<right>
+        The x-axis limits to use.  Two comma-separated numbers are expected.  
+        The units depend on whether the `--steps` or `--elapsed-time` option is 
+        used.  By default, all data are shown.
 
     -A --hide-raw
         Don't plot raw data points; only plot smoothed curves.
@@ -109,6 +114,9 @@ Configuration:
                 'step', 'elapsed_time', or 'epoch'.  See `--steps` and 
                 `--elapsed-time`.
 
+            x limits: See `--xlim`, expect that the values must be 
+                space-separated rather than comma-separated.
+
             squash hparams: See `--squash-hparams`.  Must be 'yes' or 'no'.
             hide raw: See `--hide-raw`.  Must be 'yes' or 'no'.
             hide smooth: See `--hide-smooth`.  Must be 'yes' or 'no'.
@@ -128,8 +136,10 @@ import byoc
 
 from byoc import NtConfig, DocoptConfig, Key, Func, Value
 from voluptuous import Schema, Any
+from matplotlib.ticker import MaxNLocator
 from itertools import product
 from more_itertools import one, unique_everseen as unique
+from functools import partial
 from contextlib import nullcontext
 from operator import itemgetter
 from pathlib import Path
@@ -166,6 +176,18 @@ def parse_escapes(x):
 def parse_paths(paths):
     return [Path(x) for x in paths]
 
+def parse_xlim(xlim: str, sep: str = ' '):
+    fields = xlim.split(sep)
+
+    if len(fields) != 2:
+        raise ValueError(f"expected 2 xlim values (low and high), got: {xlim!r}")
+
+    return {
+            k: byoc.float_eval(v)
+            for k, v in zip(['left', 'right'], fields, strict=True)
+            if v != '-'
+    }
+
 def parse_ylim(ylim: str):
     fields = ylim.split()
 
@@ -193,6 +215,7 @@ class App:
 
     @byoc.configs
     def iter_configs(self):
+        yield DocoptConfig(__doc__)
         yield NtConfig(
                 lambda: self.config_path,
                 schema=Schema({
@@ -210,6 +233,7 @@ class App:
                     },
                     'options': {
                         'x unit': Any('step', 'elapsed_time', 'epoch'),
+                        'x limits': parse_xlim,
                         'squash hparams': parse_bool,
                         'hide raw': parse_bool,
                         'hide smooth': parse_bool,
@@ -219,7 +243,6 @@ class App:
                     },
                 }),
         )
-        yield DocoptConfig(__doc__)
 
     config_path = byoc.param(
             Key(DocoptConfig, '--config', apply=Path),
@@ -299,6 +322,12 @@ class App:
             Key(NtConfig, ['options', 'x unit']),
             Value('epoch'),
     )
+    x_limits = byoc.param(
+            Key(DocoptConfig, '--xlim', apply=partial(parse_xlim, sep=',')),
+            Key(NtConfig, ['options', 'x limits']),
+            Value(None),
+    )
+
 
 def main():
     try:
@@ -337,6 +366,7 @@ def main():
         plot_training_metrics(
                 df, metrics, hparams,
                 x=app.x_unit,
+                xlim=app.x_limits,
                 metric_styles=app.metric_styles,
                 show_raw=not app.hide_raw,
                 show_smooth=not app.hide_smooth,
@@ -460,6 +490,7 @@ def load_tensorboard_log(log_path, cache=True, refresh=False):
 def plot_training_metrics(
         df, metrics, hparams, *,
         x='step',
+        xlim=None,
         metric_styles={},
         show_raw=True,
         show_smooth=True,
@@ -525,7 +556,7 @@ def plot_training_metrics(
 
     t_min = float('inf')
     t_max = -float('inf')
-        
+
     for i, metric in enumerate(metrics):
         t_raw = []
         y_raw = []
@@ -598,7 +629,13 @@ def plot_training_metrics(
                     )
                     axes[j,i].set_ylim(*ylim)
 
-    axes[0,0].set_xlim(t_min, t_max)
+    if xlim is not None:
+        axes[0,0].set_xlim(**xlim)
+    else:
+        axes[0,0].set_xlim(t_min, t_max)
+
+    if x in ('epoch', 'step'):
+        axes[0,0].xaxis.set_major_locator(MaxNLocator(integer=True))
 
     for i, ax_row in enumerate(axes):
         hparam = hparams[i]
